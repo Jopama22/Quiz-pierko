@@ -45,17 +45,16 @@ const el = {
 init();
 
 async function init() {
-  if (CONFIG.DEMO_MODE) {
-    el.status.textContent = "modo demo (sin backend)";
-  } else {
-    await connectSupabase();
-    subscribeToAnswers();
-  }
-
   const savedKey = localStorage.getItem("gemini_api_key");
   if (savedKey) {
     el.apiKeyInput.value = savedKey;
     el.keyStatus.textContent = "Clave guardada en este navegador.";
+    el.status.textContent = "usando tu clave de Gemini";
+  } else if (CONFIG.DEMO_MODE) {
+    el.status.textContent = "modo demo (sin backend)";
+  } else {
+    await connectSupabase();
+    subscribeToAnswers();
   }
 
   el.saveKeyBtn.addEventListener("click", handleSaveApiKey);
@@ -137,11 +136,6 @@ async function handleGenerateBatch() {
   count = Math.min(Math.max(count, 1), 100); // límite 1–100
   el.countInput.value = count;
 
-  if (!topic) {
-    el.batchStatus.textContent = "Escribe primero un tema o material de referencia.";
-    return;
-  }
-
   el.generateBtn.disabled = true;
   el.batchStatus.textContent = `Generando ${count} preguntas…`;
 
@@ -189,15 +183,18 @@ async function callGemini(apiKey, prompt) {
 }
 
 async function generateQuestionsWithGemini(apiKey, topic, count) {
+  const temaTexto = topic
+    ? `Tema o material de referencia:\n"""${topic}"""`
+    : `No se dio un tema específico: genera preguntas variadas de cultura general apropiadas para un niño (ciencia, animales, geografía, historia, curiosidades).`;
+
   const prompt = `Eres un generador de preguntas educativas de opción múltiple para un niño.
-Genera exactamente ${count} preguntas basadas en el siguiente tema o material. Cada pregunta debe tener
-4 alternativas y un "correctIndex" (0 a 3) indicando cuál es la correcta.
+Genera exactamente ${count} preguntas. Cada pregunta debe tener 4 alternativas y un
+"correctIndex" (0 a 3) indicando cuál es la correcta.
+
+${temaTexto}
 
 Responde ÚNICAMENTE con un JSON válido, sin texto adicional ni bloques de código, con este formato exacto:
-[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]
-
-Tema o material:
-"""${topic}"""`;
+[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
 
   const raw = await callGemini(apiKey, prompt);
   const cleaned = raw.replace(/```json|```/g, "").trim();
@@ -220,16 +217,17 @@ async function askBackendForQuestions(topic, count) {
 // Simulación local para probar la interfaz sin backend todavía
 async function fakeGenerateQuestions(topic, count) {
   await sleep(700);
+  const label = topic || "cultura general";
   const bank = [];
   for (let i = 1; i <= count; i++) {
     const correctIndex = Math.floor(Math.random() * 4);
     const options = [0, 1, 2, 3].map((n) =>
       n === correctIndex
-        ? `Opción correcta sobre "${topic}" (#${i})`
+        ? `Opción correcta sobre "${label}" (#${i})`
         : `Opción distractora ${n + 1} (#${i})`
     );
     bank.push({
-      question: `Pregunta ${i} sobre "${topic}": ¿cuál de estas opciones es correcta?`,
+      question: `Pregunta ${i} sobre "${label}": ¿cuál de estas opciones es correcta?`,
       options,
       correctIndex,
     });
