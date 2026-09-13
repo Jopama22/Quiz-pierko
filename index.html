@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Preguntas para ti</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+
+  <header class="topbar">
+    <span class="topbar__mark">●</span>
+    <h1 class="topbar__title">Preguntas para ti</h1>
+    <span class="topbar__status" id="connectionStatus">conectando…</span>
+  </header>
+
+  <main class="layout">
+
+    <!-- Panel del papá: genera y controla la pregunta -->
+    <section class="panel panel--host" id="hostPanel">
+      <h2 class="panel__label">Panel del papá</h2>
+
+      <div class="field">
+        <label for="apiKeyInput">Tu clave de API de Gemini (se guarda solo en este navegador)</label>
+        <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API key..." />
+        <button id="saveKeyBtn" class="btn btn--secondary">Guardar clave</button>
+        <div id="keyStatus" class="pdf-status"></div>
+      </div>
+
+      <div class="field">
+        <label for="pdfInput">O sube un PDF con preguntas / material de referencia</label>
+        <input type="file" id="pdfInput" accept="application/pdf" />
+        <div id="pdfStatus" class="pdf-status"></div>
+      </div>
+
+      <div class="field">
+        <label for="topicInput">Tema o material de referencia (para el RAG)</label>
+        <textarea id="topicInput" placeholder="Ej: cuéntale sobre dinosaurios, o pega aquí un texto de referencia..."></textarea>
+      </div>
+
+      <div class="field">
+        <label for="countInput">Cantidad de preguntas (máx. 100)</label>
+        <input type="number" id="countInput" min="1" max="100" value="20" />
+      </div>
+
+      <button id="generateBtn" class="btn btn--primary">Generar preguntas</button>
+
+      <div class="field">
+        <label>Estado del lote</label>
+        <div id="batchStatus" class="question-box">Todavía no se ha generado ningún lote.</div>
+      </div>
+
+      <button id="sendBtn" class="btn btn--secondary" disabled>Enviar siguiente pregunta</button>
+    </section>
+
+    <!-- Línea de tiempo compartida: aquí se ven las preguntas y respuestas en vivo -->
+    <section class="timeline" id="timeline" aria-live="polite">
+      <h2 class="panel__label">Conversación en vivo</h2>
+      <ol class="timeline__list" id="timelineList">
+        <!-- Los turnos (pregunta / respuesta) se insertan aquí por JS -->
+      </ol>
+    </section>
+
+    <!-- Panel del hijo: donde ve la pregunta y responde -->
+    <section class="panel panel--child" id="childPanel">
+      <h2 class="panel__label">Vista de tu hijo</h2>
+      <div id="childQuestion" class="question-box question-box--child">Esperando una pregunta…</div>
+      <div class="field">
+        <label>Elige una alternativa</label>
+        <div id="optionsList" class="options-list"></div>
+      </div>
+      <div id="answerFeedback" class="feedback" aria-live="polite"></div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <span id="footerNote">Las claves de API y la conexión en tiempo real se configuran en app.js</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
