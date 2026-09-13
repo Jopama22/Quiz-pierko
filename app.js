@@ -153,7 +153,7 @@ async function handleGenerateBatch() {
     el.batchStatus.textContent = `${questionBank.length} preguntas listas. Envía la primera cuando quieras.`;
     el.sendBtn.disabled = false;
   } catch (err) {
-    el.batchStatus.textContent = "No se pudo generar el lote. Revisa tu clave de API o intenta de nuevo.";
+    el.batchStatus.textContent = `Error: ${err.message}`;
     console.error(err);
   } finally {
     el.generateBtn.disabled = false;
@@ -165,21 +165,30 @@ async function handleGenerateBatch() {
 // =======================================================
 const GEMINI_MODEL = "gemini-2.0-flash";
 
-async function callGemini(apiKey, prompt) {
+async function callGemini(apiKey, prompt, forceJson) {
+  const body = { contents: [{ parts: [{ text: prompt }] }] };
+  if (forceJson) {
+    body.generationConfig = { responseMimeType: "application/json" };
+  }
+
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      body: JSON.stringify(body),
     }
   );
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Error de Gemini: ${errText}`);
+    throw new Error(`Error de Gemini (${res.status}): ${errText}`);
   }
   const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error(`Gemini no devolvió texto. Respuesta completa: ${JSON.stringify(data)}`);
+  }
+  return text;
 }
 
 async function generateQuestionsWithGemini(apiKey, topic, count) {
@@ -193,12 +202,16 @@ Genera exactamente ${count} preguntas. Cada pregunta debe tener 4 alternativas y
 
 ${temaTexto}
 
-Responde ÚNICAMENTE con un JSON válido, sin texto adicional ni bloques de código, con este formato exacto:
+Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloques de código, con este formato exacto:
 [{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
 
-  const raw = await callGemini(apiKey, prompt);
+  const raw = await callGemini(apiKey, prompt, true);
   const cleaned = raw.replace(/```json|```/g, "").trim();
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    throw new Error(`Gemini no devolvió un JSON válido: ${cleaned.slice(0, 200)}`);
+  }
 }
 
 // Llamada real: tu backend hace la búsqueda RAG (embeddings + contexto) y le pide
