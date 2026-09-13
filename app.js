@@ -165,10 +165,13 @@ async function handleGenerateBatch() {
 // =======================================================
 const GEMINI_MODEL = "gemini-3.6-flash";
 
-async function callGemini(apiKey, prompt, forceJson) {
-  const body = { contents: [{ parts: [{ text: prompt }] }] };
+async function callGemini(apiKey, prompt, forceJson, attempt = 1) {
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 1.0 },
+  };
   if (forceJson) {
-    body.generationConfig = { responseMimeType: "application/json" };
+    body.generationConfig.responseMimeType = "application/json";
   }
 
   const res = await fetch(
@@ -179,10 +182,17 @@ async function callGemini(apiKey, prompt, forceJson) {
       body: JSON.stringify(body),
     }
   );
+
   if (!res.ok) {
+    // Si el modelo está saturado (503), reintenta una vez después de una pausa breve
+    if (res.status === 503 && attempt < 3) {
+      await sleep(1500 * attempt);
+      return callGemini(apiKey, prompt, forceJson, attempt + 1);
+    }
     const errText = await res.text();
     throw new Error(`Error de Gemini (${res.status}): ${errText}`);
   }
+
   const data = await res.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) {
@@ -191,14 +201,65 @@ async function callGemini(apiKey, prompt, forceJson) {
   return text;
 }
 
+// Límite de caracteres por fragmento que se manda a Gemini en cada llamada,
+// y cuántos fragmentos (repartidos a lo largo de todo el documento) se usan como muestra.
+const MAX_TOPIC_CHARS = 12000;
+const MAX_CHUNKS = 5;
+
+// Divide un texto largo en varios fragmentos repartidos a lo largo de todo el
+// documento (inicio, partes intermedias y final), con un poco de variación
+// aleatoria en cada llamada para que no siempre tome exactamente los mismos puntos.
+function sampleChunks(text, chunkSize, maxChunks) {
+  if (text.length <= chunkSize) return [text];
+
+  const totalPossible = Math.ceil(text.length / chunkSize);
+  const numChunks = Math.min(maxChunks, totalPossible);
+  const chunks = [];
+  const maxStart = Math.max(text.length - chunkSize, 1);
+
+  for (let i = 0; i < numChunks; i++) {
+    const basePos = Math.floor((i * maxStart) / Math.max(numChunks - 1, 1));
+    const jitter = Math.floor((Math.random() - 0.5) * chunkSize * 0.6);
+    const start = Math.min(Math.max(basePos + jitter, 0), maxStart);
+    chunks.push(text.slice(start, start + chunkSize));
+  }
+  return chunks;
+}
+
 async function generateQuestionsWithGemini(apiKey, topic, count) {
-  const temaTexto = topic
-    ? `Tema o material de referencia:\n"""${topic}"""`
+  if (!topic) {
+    return generateQuestionsForChunk(apiKey, "", count);
+  }
+
+  const chunks = sampleChunks(topic, MAX_TOPIC_CHARS, MAX_CHUNKS);
+
+  if (chunks.length === 1) {
+    return generateQuestionsForChunk(apiKey, chunks[0], count);
+  }
+
+  // Reparte la cantidad de preguntas entre los fragmentos, para cubrir todo el material
+  el.batchStatus.textContent = `Material largo: generando preguntas de ${chunks.length} secciones repartidas en todo el documento…`;
+  const perChunk = Math.ceil(count / chunks.length);
+  let allQuestions = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    el.batchStatus.textContent = `Generando sección ${i + 1} de ${chunks.length}…`;
+    const questions = await generateQuestionsForChunk(apiKey, chunks[i], perChunk);
+    allQuestions = allQuestions.concat(questions);
+  }
+
+  return allQuestions.slice(0, count);
+}
+
+async function generateQuestionsForChunk(apiKey, chunkText, count) {
+  const temaTexto = chunkText
+    ? `Tema o material de referencia:\n"""${chunkText}"""`
     : `No se dio un tema específico: genera preguntas variadas de cultura general apropiadas para un niño (ciencia, animales, geografía, historia, curiosidades).`;
 
   const prompt = `Eres un generador de preguntas educativas de opción múltiple para un niño.
 Genera exactamente ${count} preguntas. Cada pregunta debe tener 4 alternativas y un
 "correctIndex" (0 a 3) indicando cuál es la correcta.
+Varía el enfoque y la redacción de las preguntas — evita repetir siempre las mismas preguntas obvias sobre el tema.
 
 ${temaTexto}
 
