@@ -163,7 +163,7 @@ async function handleGenerateBatch() {
 // =======================================================
 // LLAMADA DIRECTA A GEMINI (usando la clave que el usuario guardó en su navegador)
 // =======================================================
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = "gemini-3.6-flash";
 
 async function callGemini(apiKey, prompt, forceJson) {
   const body = { contents: [{ parts: [{ text: prompt }] }] };
