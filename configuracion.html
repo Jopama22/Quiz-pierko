@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Configuración — Preguntas para ti</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <span class="topbar__mark">●</span>
+    <h1 class="topbar__title">Configuración</h1>
+  </header>
+
+  <main class="layout" style="grid-template-columns: 1fr; max-width: 500px;">
+    <section class="panel">
+      <a href="index.html" class="back-link">← Volver al quiz</a>
+
+      <div class="field">
+        <label for="providerSelect">Proveedor de IA</label>
+        <select id="providerSelect">
+          <option value="gemini">Google Gemini</option>
+          <option value="ollama">Ollama Cloud</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="apiKeyInput">Tu clave de API (se guarda solo en este navegador)</label>
+        <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API key..." />
+        <button id="saveKeyBtn" class="btn btn--primary">Guardar clave</button>
+        <div id="keyStatus" class="pdf-status"></div>
+      </div>
+
+      <div class="field" style="font-size: 0.82rem; color: #9BA9C9;">
+        <p>Consigue tu clave gratis en:</p>
+        <p>• Gemini: <a href="https://aistudio.google.com/apikey" style="color: var(--sun);">aistudio.google.com/apikey</a></p>
+        <p>• Ollama Cloud: <a href="https://ollama.com/settings/keys" style="color: var(--sun);">ollama.com/settings/keys</a></p>
+        <p>Tu clave nunca se sube a GitHub ni se comparte — vive solo en este navegador.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

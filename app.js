@@ -25,9 +25,6 @@ const el = {
   status: document.getElementById("connectionStatus"),
   topicInput: document.getElementById("topicInput"),
   countInput: document.getElementById("countInput"),
-  apiKeyInput: document.getElementById("apiKeyInput"),
-  saveKeyBtn: document.getElementById("saveKeyBtn"),
-  keyStatus: document.getElementById("keyStatus"),
   pdfInput: document.getElementById("pdfInput"),
   pdfStatus: document.getElementById("pdfStatus"),
   generateBtn: document.getElementById("generateBtn"),
@@ -37,7 +34,23 @@ const el = {
   optionsList: document.getElementById("optionsList"),
   answerFeedback: document.getElementById("answerFeedback"),
   timelineList: document.getElementById("timelineList"),
+  // Estos solo existen en configuracion.html
+  providerSelect: document.getElementById("providerSelect"),
+  apiKeyInput: document.getElementById("apiKeyInput"),
+  saveKeyBtn: document.getElementById("saveKeyBtn"),
+  keyStatus: document.getElementById("keyStatus"),
 };
+
+// =======================================================
+// CLAVE / PROVEEDOR (guardados en localStorage, compartidos entre páginas)
+// =======================================================
+function getProvider() {
+  return localStorage.getItem("ai_provider") || "gemini";
+}
+
+function getApiKey() {
+  return localStorage.getItem(`api_key_${getProvider()}`) || null;
+}
 
 // =======================================================
 // INICIO
@@ -45,11 +58,51 @@ const el = {
 init();
 
 async function init() {
-  const savedKey = localStorage.getItem("gemini_api_key");
+  if (el.providerSelect) initConfigPage();
+  if (el.generateBtn) await initQuizPage();
+}
+
+// --- Página de configuración (configuracion.html) ---
+function initConfigPage() {
+  const provider = getProvider();
+  el.providerSelect.value = provider;
+
+  const savedKey = localStorage.getItem(`api_key_${provider}`);
   if (savedKey) {
     el.apiKeyInput.value = savedKey;
     el.keyStatus.textContent = "Clave guardada en este navegador.";
-    el.status.textContent = "usando tu clave de Gemini";
+  }
+
+  el.providerSelect.addEventListener("change", () => {
+    const p = el.providerSelect.value;
+    localStorage.setItem("ai_provider", p);
+    const key = localStorage.getItem(`api_key_${p}`);
+    el.apiKeyInput.value = key || "";
+    el.keyStatus.textContent = key ? "Clave guardada en este navegador." : "";
+  });
+
+  el.saveKeyBtn.addEventListener("click", handleSaveApiKey);
+}
+
+function handleSaveApiKey() {
+  const provider = el.providerSelect.value;
+  const key = el.apiKeyInput.value.trim();
+  localStorage.setItem("ai_provider", provider);
+  if (!key) {
+    localStorage.removeItem(`api_key_${provider}`);
+    el.keyStatus.textContent = "Clave eliminada.";
+    return;
+  }
+  localStorage.setItem(`api_key_${provider}`, key);
+  el.keyStatus.textContent = "Clave guardada en este navegador. Ya puedes generar preguntas reales.";
+}
+
+// --- Página del quiz (index.html) ---
+async function initQuizPage() {
+  const apiKey = getApiKey();
+  if (apiKey) {
+    el.status.textContent =
+      getProvider() === "gemini" ? "usando tu clave de Gemini" : "usando tu clave de Ollama Cloud";
   } else if (CONFIG.DEMO_MODE) {
     el.status.textContent = "modo demo (sin backend)";
   } else {
@@ -57,25 +110,9 @@ async function init() {
     subscribeToAnswers();
   }
 
-  el.saveKeyBtn.addEventListener("click", handleSaveApiKey);
   el.generateBtn.addEventListener("click", handleGenerateBatch);
   el.sendBtn.addEventListener("click", handleSendNextQuestion);
   el.pdfInput.addEventListener("change", handlePdfUpload);
-}
-
-function handleSaveApiKey() {
-  const key = el.apiKeyInput.value.trim();
-  if (!key) {
-    localStorage.removeItem("gemini_api_key");
-    el.keyStatus.textContent = "Clave eliminada.";
-    return;
-  }
-  localStorage.setItem("gemini_api_key", key);
-  el.keyStatus.textContent = "Clave guardada en este navegador. Ya puedes generar preguntas reales.";
-}
-
-function getApiKey() {
-  return localStorage.getItem("gemini_api_key") || null;
 }
 
 // =======================================================
@@ -142,7 +179,7 @@ async function handleGenerateBatch() {
   try {
     const apiKey = getApiKey();
     if (apiKey) {
-      questionBank = await generateQuestionsWithGemini(apiKey, topic, count);
+      questionBank = await generateQuestionsWithAI(apiKey, topic, count);
     } else if (!CONFIG.DEMO_MODE) {
       questionBank = await askBackendForQuestions(topic, count);
     } else {
@@ -161,9 +198,16 @@ async function handleGenerateBatch() {
 }
 
 // =======================================================
-// LLAMADA DIRECTA A GEMINI (usando la clave que el usuario guardó en su navegador)
+// LLAMADA A LA IA (Gemini u Ollama Cloud, según lo que el usuario eligió)
 // =======================================================
 const GEMINI_MODEL = "gemini-3.6-flash";
+const OLLAMA_MODEL = "gpt-oss:120b"; // modelo gratuito disponible en Ollama Cloud
+
+async function callAI(apiKey, prompt, forceJson) {
+  return getProvider() === "ollama"
+    ? callOllama(apiKey, prompt, forceJson)
+    : callGemini(apiKey, prompt, forceJson);
+}
 
 async function callGemini(apiKey, prompt, forceJson, attempt = 1) {
   const body = {
@@ -201,7 +245,41 @@ async function callGemini(apiKey, prompt, forceJson, attempt = 1) {
   return text;
 }
 
-// Límite de caracteres por fragmento que se manda a Gemini en cada llamada,
+// Ollama Cloud usa su propio endpoint (https://ollama.com/api/generate) con
+// autenticación por header "Authorization: Bearer <clave>", distinto al de Gemini.
+async function callOllama(apiKey, prompt, forceJson, attempt = 1) {
+  const res = await fetch("https://ollama.com/api/generate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: OLLAMA_MODEL,
+      prompt,
+      stream: false,
+      format: forceJson ? "json" : undefined,
+      options: { temperature: 1.0 },
+    }),
+  });
+
+  if (!res.ok) {
+    if (res.status === 503 && attempt < 3) {
+      await sleep(1500 * attempt);
+      return callOllama(apiKey, prompt, forceJson, attempt + 1);
+    }
+    const errText = await res.text();
+    throw new Error(`Error de Ollama (${res.status}): ${errText}`);
+  }
+
+  const data = await res.json();
+  if (!data.response) {
+    throw new Error(`Ollama no devolvió texto. Respuesta completa: ${JSON.stringify(data)}`);
+  }
+  return data.response;
+}
+
+// Límite de caracteres por fragmento que se manda a la IA en cada llamada,
 // y cuántos fragmentos (repartidos a lo largo de todo el documento) se usan como muestra.
 const MAX_TOPIC_CHARS = 12000;
 const MAX_CHUNKS = 5;
@@ -226,7 +304,7 @@ function sampleChunks(text, chunkSize, maxChunks) {
   return chunks;
 }
 
-async function generateQuestionsWithGemini(apiKey, topic, count) {
+async function generateQuestionsWithAI(apiKey, topic, count) {
   if (!topic) {
     return generateQuestionsForChunk(apiKey, "", count);
   }
@@ -266,12 +344,12 @@ ${temaTexto}
 Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloques de código, con este formato exacto:
 [{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
 
-  const raw = await callGemini(apiKey, prompt, true);
+  const raw = await callAI(apiKey, prompt, true);
   const cleaned = raw.replace(/```json|```/g, "").trim();
   try {
     return JSON.parse(cleaned);
   } catch (e) {
-    throw new Error(`Gemini no devolvió un JSON válido: ${cleaned.slice(0, 200)}`);
+    throw new Error(`La IA no devolvió un JSON válido: ${cleaned.slice(0, 200)}`);
   }
 }
 
@@ -397,7 +475,7 @@ async function showAiReview(item, selectedIndex, isCorrect) {
   try {
     const apiKey = getApiKey();
     const explanation = apiKey
-      ? await reviewAnswerWithGemini(apiKey, item, selectedIndex, isCorrect)
+      ? await reviewAnswerWithAI(apiKey, item, selectedIndex, isCorrect)
       : CONFIG.DEMO_MODE
       ? await fakeAiReview(item, selectedIndex, isCorrect)
       : await askBackendToReview(item, selectedIndex, isCorrect);
@@ -416,7 +494,7 @@ async function showAiReview(item, selectedIndex, isCorrect) {
   }
 }
 
-async function reviewAnswerWithGemini(apiKey, item, selectedIndex, isCorrect) {
+async function reviewAnswerWithAI(apiKey, item, selectedIndex, isCorrect) {
   const prompt = `Un niño respondió una pregunta de un quiz educativo.
 Pregunta: "${item.question}"
 Alternativas: ${item.options.join(" | ")}
@@ -426,7 +504,7 @@ El niño eligió: "${item.options[selectedIndex]}" (${isCorrect ? "correcta" : "
 Da una explicación breve (1-2 frases), cálida y alentadora, en español, dirigida directamente al niño.
 Responde solo con la explicación, sin comillas ni texto extra.`;
 
-  return (await callGemini(apiKey, prompt)).trim();
+  return (await callAI(apiKey, prompt, false)).trim();
 }
 
 // Llamada real: tu backend le manda a Gemini la pregunta, las alternativas,

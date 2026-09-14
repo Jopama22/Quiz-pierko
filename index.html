@@ -15,6 +15,7 @@
     <span class="topbar__mark">●</span>
     <h1 class="topbar__title">Preguntas para ti</h1>
     <span class="topbar__status" id="connectionStatus">conectando…</span>
+    <a href="configuracion.html" class="topbar__settings" title="Configuración">⚙️</a>
   </header>
 
   <main class="layout">
@@ -22,13 +23,6 @@
     <!-- Panel del papá: genera y controla la pregunta -->
     <section class="panel panel--host" id="hostPanel">
       <h2 class="panel__label">Panel del papá</h2>
-
-      <div class="field">
-        <label for="apiKeyInput">Tu clave de API de Gemini (se guarda solo en este navegador)</label>
-        <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API key..." />
-        <button id="saveKeyBtn" class="btn btn--secondary">Guardar clave</button>
-        <div id="keyStatus" class="pdf-status"></div>
-      </div>
 
       <div class="field">
         <label for="pdfInput">O sube un PDF con preguntas / material de referencia</label>
