@@ -6,7 +6,7 @@
 <title>Configuración — Preguntas para ti</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=2" />
+<link rel="stylesheet" href="style.css?v=4" />
 </head>
 <body>
 
@@ -24,6 +24,7 @@
         <select id="providerSelect">
           <option value="gemini">Google Gemini</option>
           <option value="ollama">Ollama Cloud</option>
+          <option value="groq">Groq</option>
         </select>
       </div>
 
@@ -34,15 +35,22 @@
         <div id="keyStatus" class="pdf-status"></div>
       </div>
 
+      <div class="field" id="proxyField" style="display: none;">
+        <label for="proxyInput" id="proxyLabel">URL de tu proxy (Cloudflare Worker o Deno Deploy)</label>
+        <input type="text" id="proxyInput" placeholder="https://tu-proxy.deno.dev" />
+        <div class="pdf-status">Necesario para usar este proveedor desde el navegador (evita el bloqueo de CORS).</div>
+      </div>
+
       <div class="field" style="font-size: 0.82rem; color: #9BA9C9;">
         <p>Consigue tu clave gratis en:</p>
         <p>• Gemini: <a href="https://aistudio.google.com/apikey" style="color: var(--sun);">aistudio.google.com/apikey</a></p>
         <p>• Ollama Cloud: <a href="https://ollama.com/settings/keys" style="color: var(--sun);">ollama.com/settings/keys</a></p>
+        <p>• Groq: <a href="https://console.groq.com/keys" style="color: var(--sun);">console.groq.com/keys</a></p>
         <p>Tu clave nunca se sube a GitHub ni se comparte — vive solo en este navegador.</p>
       </div>
     </section>
   </main>
 
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

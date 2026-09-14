@@ -39,6 +39,8 @@ const el = {
   apiKeyInput: document.getElementById("apiKeyInput"),
   saveKeyBtn: document.getElementById("saveKeyBtn"),
   keyStatus: document.getElementById("keyStatus"),
+  proxyField: document.getElementById("proxyField"),
+  proxyInput: document.getElementById("proxyInput"),
 };
 
 // =======================================================
@@ -66,28 +68,45 @@ async function init() {
 function initConfigPage() {
   const provider = getProvider();
   el.providerSelect.value = provider;
+  updateProxyVisibility(provider);
 
   const savedKey = localStorage.getItem(`api_key_${provider}`);
   if (savedKey) {
     el.apiKeyInput.value = savedKey;
     el.keyStatus.textContent = "Clave guardada en este navegador.";
   }
+  el.proxyInput.value = localStorage.getItem(`proxy_url_${provider}`) || "";
 
   el.providerSelect.addEventListener("change", () => {
     const p = el.providerSelect.value;
     localStorage.setItem("ai_provider", p);
+    updateProxyVisibility(p);
     const key = localStorage.getItem(`api_key_${p}`);
     el.apiKeyInput.value = key || "";
     el.keyStatus.textContent = key ? "Clave guardada en este navegador." : "";
+    el.proxyInput.value = localStorage.getItem(`proxy_url_${p}`) || "";
   });
 
   el.saveKeyBtn.addEventListener("click", handleSaveApiKey);
+}
+
+// Gemini se puede llamar directo desde el navegador; Ollama y Groq necesitan
+// pasar por un proxy propio porque bloquean las llamadas directas (CORS).
+const PROVIDERS_NEEDING_PROXY = ["ollama", "groq"];
+
+function updateProxyVisibility(provider) {
+  el.proxyField.style.display = PROVIDERS_NEEDING_PROXY.includes(provider) ? "block" : "none";
 }
 
 function handleSaveApiKey() {
   const provider = el.providerSelect.value;
   const key = el.apiKeyInput.value.trim();
   localStorage.setItem("ai_provider", provider);
+
+  if (PROVIDERS_NEEDING_PROXY.includes(provider)) {
+    localStorage.setItem(`proxy_url_${provider}`, el.proxyInput.value.trim());
+  }
+
   if (!key) {
     localStorage.removeItem(`api_key_${provider}`);
     el.keyStatus.textContent = "Clave eliminada.";
@@ -101,8 +120,9 @@ function handleSaveApiKey() {
 async function initQuizPage() {
   const apiKey = getApiKey();
   if (apiKey) {
-    el.status.textContent =
-      getProvider() === "gemini" ? "usando tu clave de Gemini" : "usando tu clave de Ollama Cloud";
+    const provider = getProvider();
+    const nombres = { gemini: "Gemini", ollama: "Ollama Cloud", groq: "Groq" };
+    el.status.textContent = `usando tu clave de ${nombres[provider] || provider}`;
   } else if (CONFIG.DEMO_MODE) {
     el.status.textContent = "modo demo (sin backend)";
   } else {
@@ -204,9 +224,10 @@ const GEMINI_MODEL = "gemini-3.6-flash";
 const OLLAMA_MODEL = "gpt-oss:120b"; // modelo gratuito disponible en Ollama Cloud
 
 async function callAI(apiKey, prompt, forceJson) {
-  return getProvider() === "ollama"
-    ? callOllama(apiKey, prompt, forceJson)
-    : callGemini(apiKey, prompt, forceJson);
+  const provider = getProvider();
+  if (provider === "ollama") return callOllama(apiKey, prompt, forceJson);
+  if (provider === "groq") return callGroq(apiKey, prompt, forceJson);
+  return callGemini(apiKey, prompt, forceJson);
 }
 
 async function callGemini(apiKey, prompt, forceJson, attempt = 1) {
@@ -245,10 +266,17 @@ async function callGemini(apiKey, prompt, forceJson, attempt = 1) {
   return text;
 }
 
-// Ollama Cloud usa su propio endpoint (https://ollama.com/api/generate) con
-// autenticación por header "Authorization: Bearer <clave>", distinto al de Gemini.
+// Ollama Cloud bloquea las llamadas directas desde el navegador (CORS), así que
+// pasamos por un pequeño proxy (Cloudflare Worker) configurado en configuracion.html.
 async function callOllama(apiKey, prompt, forceJson, attempt = 1) {
-  const res = await fetch("https://ollama.com/api/generate", {
+  const proxyUrl = localStorage.getItem("proxy_url_ollama");
+  if (!proxyUrl) {
+    throw new Error(
+      "Falta configurar la URL de tu proxy de Ollama en Configuración (necesario para evitar el bloqueo de CORS)."
+    );
+  }
+
+  const res = await fetch(proxyUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -277,6 +305,53 @@ async function callOllama(apiKey, prompt, forceJson, attempt = 1) {
     throw new Error(`Ollama no devolvió texto. Respuesta completa: ${JSON.stringify(data)}`);
   }
   return data.response;
+}
+
+// Groq usa formato tipo OpenAI (mensajes de chat) y también bloquea CORS
+// directo desde el navegador, así que también pasa por un proxy propio.
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+
+async function callGroq(apiKey, prompt, forceJson, attempt = 1) {
+  const proxyUrl = localStorage.getItem("proxy_url_groq");
+  if (!proxyUrl) {
+    throw new Error(
+      "Falta configurar la URL de tu proxy de Groq en Configuración (necesario para evitar el bloqueo de CORS)."
+    );
+  }
+
+  const body = {
+    model: GROQ_MODEL,
+    messages: [{ role: "user", content: prompt }],
+    temperature: 1.0,
+  };
+  if (forceJson) {
+    body.response_format = { type: "json_object" };
+  }
+
+  const res = await fetch(proxyUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    if (res.status === 503 && attempt < 3) {
+      await sleep(1500 * attempt);
+      return callGroq(apiKey, prompt, forceJson, attempt + 1);
+    }
+    const errText = await res.text();
+    throw new Error(`Error de Groq (${res.status}): ${errText}`);
+  }
+
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) {
+    throw new Error(`Groq no devolvió texto. Respuesta completa: ${JSON.stringify(data)}`);
+  }
+  return text;
 }
 
 // Límite de caracteres por fragmento que se manda a la IA en cada llamada,
