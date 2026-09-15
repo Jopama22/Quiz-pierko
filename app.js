@@ -12,6 +12,11 @@ const CONFIG = {
 };
 
 // =======================================================
+// VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
+// =======================================================
+const APP_JS_VERSION = "v7";
+
+// =======================================================
 // ESTADO
 // =======================================================
 let questionBank = [];   // [{ question, options: [...4], correctIndex }]
@@ -69,6 +74,8 @@ function initConfigPage() {
   const provider = getProvider();
   el.providerSelect.value = provider;
   updateProxyVisibility(provider);
+  console.log(`app.js cargado: ${APP_JS_VERSION}`);
+  document.title = `Configuración (${APP_JS_VERSION})`;
 
   const savedKey = localStorage.getItem(`api_key_${provider}`);
   if (savedKey) {
@@ -122,9 +129,9 @@ async function initQuizPage() {
   if (apiKey) {
     const provider = getProvider();
     const nombres = { gemini: "Gemini", ollama: "Ollama Cloud", groq: "Groq" };
-    el.status.textContent = `usando tu clave de ${nombres[provider] || provider}`;
+    el.status.textContent = `usando tu clave de ${nombres[provider] || provider} (js ${APP_JS_VERSION})`;
   } else if (CONFIG.DEMO_MODE) {
-    el.status.textContent = "modo demo (sin backend)";
+    el.status.textContent = `modo demo (js ${APP_JS_VERSION})`;
   } else {
     await connectSupabase();
     subscribeToAnswers();
