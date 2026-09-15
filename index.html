@@ -6,6 +6,10 @@
 <title>Preguntas para ti</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#1D2A44" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
 <link rel="stylesheet" href="style.css?v=7" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
@@ -14,6 +18,7 @@
   <header class="topbar">
     <span class="topbar__mark">●</span>
     <h1 class="topbar__title">Preguntas para ti</h1>
+    <span class="topbar__score" id="scoreDisplay"></span>
     <span class="topbar__status" id="connectionStatus">conectando…</span>
     <a href="configuracion.html" class="topbar__settings" title="Configuración">⚙️</a>
   </header>
@@ -75,6 +80,6 @@
     <span id="footerNote">Las claves de API y la conexión en tiempo real se configuran en app.js</span>
   </footer>
 
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

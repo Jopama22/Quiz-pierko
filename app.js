@@ -14,7 +14,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v10";
+const APP_JS_VERSION = "v11";
 
 // =======================================================
 // ESTADO
@@ -22,12 +22,14 @@ const APP_JS_VERSION = "v10";
 let questionBank = [];   // [{ question, options: [...4], correctIndex }]
 let currentIndex = -1;
 let supabaseClient = null;
+let score = { correct: 0, total: 0 };
 
 // =======================================================
 // ELEMENTOS
 // =======================================================
 const el = {
   status: document.getElementById("connectionStatus"),
+  scoreDisplay: document.getElementById("scoreDisplay"),
   topicInput: document.getElementById("topicInput"),
   countInput: document.getElementById("countInput"),
   pdfInput: document.getElementById("pdfInput"),
@@ -138,6 +140,9 @@ function handleSaveApiKey() {
 
 // --- Página del quiz (index.html) ---
 async function initQuizPage() {
+  restoreQuizState();
+  updateScoreDisplay();
+
   const apiKey = getApiKey();
   if (apiKey) {
     const provider = getProvider();
@@ -153,6 +158,45 @@ async function initQuizPage() {
   el.generateBtn.addEventListener("click", handleGenerateBatch);
   el.sendBtn.addEventListener("click", handleSendNextQuestion);
   el.pdfInput.addEventListener("change", handlePdfUpload);
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+}
+
+// =======================================================
+// PUNTAJE Y ESTADO PERSISTENTE (para que no se pierda si cierras la app)
+// =======================================================
+function updateScoreDisplay() {
+  el.scoreDisplay.textContent = score.total > 0 ? `Puntaje: ${score.correct}/${score.total}` : "";
+}
+
+function saveQuizState() {
+  localStorage.setItem(
+    "quiz_state",
+    JSON.stringify({ questionBank, currentIndex, score })
+  );
+}
+
+function restoreQuizState() {
+  const saved = localStorage.getItem("quiz_state");
+  if (!saved) return;
+  try {
+    const state = JSON.parse(saved);
+    questionBank = state.questionBank || [];
+    currentIndex = typeof state.currentIndex === "number" ? state.currentIndex : -1;
+    score = state.score || { correct: 0, total: 0 };
+    if (questionBank.length > 0) {
+      el.batchStatus.textContent = `${questionBank.length} preguntas listas. Envía la primera cuando quieras.`;
+      el.sendBtn.disabled = false;
+    }
+    if (currentIndex >= 0 && currentIndex < questionBank.length) {
+      el.batchStatus.textContent = `Pregunta ${currentIndex + 1} de ${questionBank.length} enviada.`;
+      renderQuestionForChild(questionBank[currentIndex]);
+    }
+  } catch (e) {
+    console.error("No se pudo restaurar el estado guardado", e);
+  }
 }
 
 // =======================================================
@@ -227,6 +271,9 @@ async function handleGenerateBatch() {
     }
 
     currentIndex = -1;
+    score = { correct: 0, total: 0 };
+    updateScoreDisplay();
+    saveQuizState();
     el.batchStatus.textContent = `${questionBank.length} preguntas listas. Envía la primera cuando quieras.`;
     el.sendBtn.disabled = false;
   } catch (err) {
@@ -498,6 +545,7 @@ async function handleSendNextQuestion() {
   addTimelineItem("Pregunta enviada", item.question, "question");
 
   renderQuestionForChild(item);
+  saveQuizState();
 
   if (!CONFIG.DEMO_MODE) {
     await supabaseClient.from("quiz_turns").insert({
@@ -531,6 +579,10 @@ function renderQuestionForChild(item) {
 // =======================================================
 async function handleChildAnswer(selectedIndex, item, clickedBtn) {
   const isCorrect = selectedIndex === item.correctIndex;
+  score.total++;
+  if (isCorrect) score.correct++;
+  updateScoreDisplay();
+  saveQuizState();
 
   // Bloquea todos los botones y marca correcto/incorrecto visualmente
   const allButtons = el.optionsList.querySelectorAll(".option-btn");
