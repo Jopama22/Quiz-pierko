@@ -117,6 +117,29 @@
 
     let supabaseClient;
 
+    async function fetchLatestQuestion() {
+      const { data, error } = await supabaseClient
+        .from("quiz_turns")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (error || !data) return;
+
+      // Busca la pregunta más reciente que todavía no tenga una respuesta después de ella
+      for (const row of data) {
+        if (row.type === "answer") return; // ya se respondió la más reciente
+        if (row.type === "question") {
+          renderQuestion({
+            question: row.content,
+            options: row.options,
+            correctIndex: row.correct_index,
+          });
+          return;
+        }
+      }
+    }
+
     function connectSupabase() {
       supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -139,8 +162,9 @@
             }
           }
         )
-        .subscribe((status) => {
+        .subscribe(async (status) => {
           el.status.textContent = status === "SUBSCRIBED" ? "conectado" : "conectando…";
+          if (status === "SUBSCRIBED") await fetchLatestQuestion();
         });
     }
 
