@@ -14,7 +14,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v9";
+const APP_JS_VERSION = "v10";
 
 // =======================================================
 // ESTADO
@@ -329,7 +329,7 @@ async function callOllama(apiKey, prompt, forceJson, attempt = 1) {
 
 // Groq usa formato tipo OpenAI (mensajes de chat) y también bloquea CORS
 // directo desde el navegador, así que también pasa por un proxy propio.
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "openai/gpt-oss-120b";
 
 async function callGroq(apiKey, prompt, forceJson, attempt = 1) {
   const proxyUrl = localStorage.getItem("proxy_url_groq");
