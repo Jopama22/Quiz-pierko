@@ -2,7 +2,7 @@
 // pantalla de inicio" / "Instalar app" y que la app abra como app real
 // (sin barra de direcciones) en vez de como una pestaña de navegador.
 const CACHE_NAME = "quiz-hijo-v1";
-const FILES_TO_CACHE = ["index.html", "configuracion.html", "style.css"];
+const FILES_TO_CACHE = ["index.html", "configuracion.html", "hijo.html", "style.css"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

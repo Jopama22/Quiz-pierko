@@ -12,6 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png" />
 <link rel="stylesheet" href="style.css?v=7" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -50,6 +51,9 @@
       <div class="field">
         <label>Estado del lote</label>
         <div id="batchStatus" class="question-box">Todavía no se ha generado ningún lote.</div>
+        <div class="progress-bar">
+          <div class="progress-bar__fill" id="progressFill" style="width: 0%;"></div>
+        </div>
       </div>
 
       <button id="sendBtn" class="btn btn--secondary" disabled>Enviar siguiente pregunta</button>
@@ -65,7 +69,11 @@
 
     <!-- Panel del hijo: donde ve la pregunta y responde -->
     <section class="panel panel--child" id="childPanel">
-      <h2 class="panel__label">Vista de tu hijo</h2>
+      <h2 class="panel__label">Vista de tu hijo (respaldo, mismo dispositivo)</h2>
+      <div class="share-box">
+        📱 Para que tu hijo responda desde <strong>su propio celular</strong>, mándale este link:
+        <div class="share-link" id="shareLink"></div>
+      </div>
       <div id="childQuestion" class="question-box question-box--child">Esperando una pregunta…</div>
       <div class="field">
         <label>Elige una alternativa</label>
@@ -80,6 +88,6 @@
     <span id="footerNote">Las claves de API y la conexión en tiempo real se configuran en app.js</span>
   </footer>
 
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=13"></script>
 </body>
 </html>

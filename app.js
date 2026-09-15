@@ -1,20 +1,17 @@
 // =======================================================
-// CONFIGURACIÓN — completa esto cuando tengas tus claves
+// CONFIGURACIÓN — datos reales de tu proyecto de Supabase
 // =======================================================
-// ⚠️ La clave de Gemini NUNCA debe ir aquí (este archivo es público en GitHub Pages).
-// En su lugar, apunta BACKEND_ENDPOINT a una función backend (Supabase Edge
-// Function / Cloudflare Worker) que guarde la clave de forma segura y llame a Gemini.
+// La "publishable key" de Supabase SÍ está diseñada para ser pública/expuesta
+// en el navegador (está protegida por las políticas de seguridad —RLS— de la tabla).
 const CONFIG = {
-  SUPABASE_URL: "https://TU-PROYECTO.supabase.co",
-  SUPABASE_ANON_KEY: "TU-ANON-KEY-PUBLICA", // esta sí es pública, está diseñada para el frontend
-  BACKEND_ENDPOINT: "https://TU-PROYECTO.functions.supabase.co/ask-gemini",
-  DEMO_MODE: true, // ponlo en false cuando conectes Supabase y el backend real
+  SUPABASE_URL: "https://yjljeihokjqniuemtxuz.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_hhzJiWEZK7LZsg08gzdauQ_MtxU1CHf",
 };
 
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v11";
+const APP_JS_VERSION = "v13";
 
 // =======================================================
 // ESTADO
@@ -36,10 +33,12 @@ const el = {
   pdfStatus: document.getElementById("pdfStatus"),
   generateBtn: document.getElementById("generateBtn"),
   batchStatus: document.getElementById("batchStatus"),
+  progressFill: document.getElementById("progressFill"),
   sendBtn: document.getElementById("sendBtn"),
   childQuestion: document.getElementById("childQuestion"),
   optionsList: document.getElementById("optionsList"),
   answerFeedback: document.getElementById("answerFeedback"),
+  shareLink: document.getElementById("shareLink"),
   timelineList: document.getElementById("timelineList"),
   // Estos solo existen en configuracion.html
   providerSelect: document.getElementById("providerSelect"),
@@ -142,17 +141,19 @@ function handleSaveApiKey() {
 async function initQuizPage() {
   restoreQuizState();
   updateScoreDisplay();
+  updateProgressBar();
 
   const apiKey = getApiKey();
-  if (apiKey) {
-    const provider = getProvider();
-    const nombres = { gemini: "Gemini", ollama: "Ollama Cloud", groq: "Groq" };
-    el.status.textContent = `usando tu clave de ${nombres[provider] || provider} (js ${APP_JS_VERSION})`;
-  } else if (CONFIG.DEMO_MODE) {
-    el.status.textContent = `modo demo (js ${APP_JS_VERSION})`;
-  } else {
-    await connectSupabase();
-    subscribeToAnswers();
+  const nombres = { gemini: "Gemini", ollama: "Ollama Cloud", groq: "Groq" };
+  const aiLabel = apiKey ? `IA: ${nombres[getProvider()] || getProvider()}` : "IA: modo demo";
+  el.status.textContent = `${aiLabel} (js ${APP_JS_VERSION})`;
+
+  await connectSupabase();
+  subscribeToAnswers();
+
+  if (el.shareLink) {
+    const hijoUrl = new URL("hijo.html", window.location.href).href;
+    el.shareLink.textContent = hijoUrl;
   }
 
   el.generateBtn.addEventListener("click", handleGenerateBatch);
@@ -169,6 +170,14 @@ async function initQuizPage() {
 // =======================================================
 function updateScoreDisplay() {
   el.scoreDisplay.textContent = score.total > 0 ? `Puntaje: ${score.correct}/${score.total}` : "";
+}
+
+function updateProgressBar() {
+  if (!el.progressFill) return;
+  const total = questionBank.length;
+  const done = Math.max(currentIndex + 1, 0);
+  const pct = total > 0 ? Math.min((done / total) * 100, 100) : 0;
+  el.progressFill.style.width = `${pct}%`;
 }
 
 function saveQuizState() {
@@ -224,28 +233,10 @@ async function handlePdfUpload(event) {
 
     el.topicInput.value = fullText.trim();
     el.pdfStatus.textContent = `Listo: se extrajeron ${pdf.numPages} página(s) de "${file.name}".`;
-
-    // En producción, además de rellenar el textarea, conviene mandar este texto
-    // a tu backend para trocearlo, generar embeddings y guardarlo en Supabase
-    // (así el RAG puede buscar el fragmento más relevante, no todo el PDF entero).
-    if (!CONFIG.DEMO_MODE) {
-      await ingestTextForRag(fullText, file.name);
-    }
   } catch (err) {
     el.pdfStatus.textContent = "No se pudo leer el PDF. Intenta con otro archivo.";
     console.error(err);
   }
-}
-
-// Llamada real: tu backend trocea el texto, genera embeddings con Gemini
-// y los guarda en una tabla vectorial de Supabase (pgvector) para el RAG.
-async function ingestTextForRag(text, sourceName) {
-  const res = await fetch(CONFIG.BACKEND_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "ingest_document", text, sourceName }),
-  });
-  if (!res.ok) throw new Error("Fallo al indexar el documento");
 }
 
 // =======================================================
@@ -262,17 +253,14 @@ async function handleGenerateBatch() {
 
   try {
     const apiKey = getApiKey();
-    if (apiKey) {
-      questionBank = await generateQuestionsWithAI(apiKey, topic, count);
-    } else if (!CONFIG.DEMO_MODE) {
-      questionBank = await askBackendForQuestions(topic, count);
-    } else {
-      questionBank = await fakeGenerateQuestions(topic, count);
-    }
+    questionBank = apiKey
+      ? await generateQuestionsWithAI(apiKey, topic, count)
+      : await fakeGenerateQuestions(topic, count);
 
     currentIndex = -1;
     score = { correct: 0, total: 0 };
     updateScoreDisplay();
+    updateProgressBar();
     saveQuizState();
     el.batchStatus.textContent = `${questionBank.length} preguntas listas. Envía la primera cuando quieras.`;
     el.sendBtn.disabled = false;
@@ -495,20 +483,7 @@ Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloq
   }
 }
 
-// Llamada real: tu backend hace la búsqueda RAG (embeddings + contexto) y le pide
-// a Gemini un JSON así: { questions: [ { question, options: [4], correctIndex }, ... ] }
-async function askBackendForQuestions(topic, count) {
-  const res = await fetch(CONFIG.BACKEND_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "generate_questions", topic, count }),
-  });
-  if (!res.ok) throw new Error("Fallo al generar las preguntas");
-  const data = await res.json();
-  return data.questions;
-}
-
-// Simulación local para probar la interfaz sin backend todavía
+// Simulación local para cuando no hay ninguna clave de IA configurada
 async function fakeGenerateQuestions(topic, count) {
   await sleep(700);
   const label = topic || "cultura general";
@@ -545,16 +520,15 @@ async function handleSendNextQuestion() {
   addTimelineItem("Pregunta enviada", item.question, "question");
 
   renderQuestionForChild(item);
+  updateProgressBar();
   saveQuizState();
 
-  if (!CONFIG.DEMO_MODE) {
-    await supabaseClient.from("quiz_turns").insert({
-      type: "question",
-      content: item.question,
-      options: item.options,
-      correct_index: item.correctIndex,
-    });
-  }
+  await supabaseClient.from("quiz_turns").insert({
+    type: "question",
+    content: item.question,
+    options: item.options,
+    correct_index: item.correctIndex,
+  });
 }
 
 // =======================================================
@@ -600,14 +574,6 @@ async function handleChildAnswer(selectedIndex, item, clickedBtn) {
     "answer"
   );
 
-  if (!CONFIG.DEMO_MODE) {
-    await supabaseClient.from("quiz_turns").insert({
-      type: "answer",
-      content: item.options[selectedIndex],
-      is_correct: isCorrect,
-    });
-  }
-
   // La IA revisa la respuesta y da una explicación breve (esto sí usa el modelo,
   // no solo la comparación de índices)
   await showAiReview(item, selectedIndex, isCorrect);
@@ -623,19 +589,10 @@ async function showAiReview(item, selectedIndex, isCorrect) {
     const apiKey = getApiKey();
     const explanation = apiKey
       ? await reviewAnswerWithAI(apiKey, item, selectedIndex, isCorrect)
-      : CONFIG.DEMO_MODE
-      ? await fakeAiReview(item, selectedIndex, isCorrect)
-      : await askBackendToReview(item, selectedIndex, isCorrect);
+      : await fakeAiReview(item, selectedIndex, isCorrect);
 
     el.answerFeedback.textContent = (isCorrect ? "¡Correcto! 🎉 " : "No era esa. ") + explanation;
     addTimelineItem("Comentario de la IA", explanation, "review");
-
-    if (!CONFIG.DEMO_MODE && !apiKey) {
-      await supabaseClient.from("quiz_turns").insert({
-        type: "review",
-        content: explanation,
-      });
-    }
   } catch (err) {
     console.error(err);
   }
@@ -654,26 +611,7 @@ Responde solo con la explicación, sin comillas ni texto extra.`;
   return (await callAI(apiKey, prompt, false)).trim();
 }
 
-// Llamada real: tu backend le manda a Gemini la pregunta, las alternativas,
-// cuál eligió tu hijo y cuál era la correcta, y pide una explicación breve.
-async function askBackendToReview(item, selectedIndex, isCorrect) {
-  const res = await fetch(CONFIG.BACKEND_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "review_answer",
-      question: item.question,
-      options: item.options,
-      correctIndex: item.correctIndex,
-      selectedIndex,
-    }),
-  });
-  if (!res.ok) throw new Error("Fallo al revisar la respuesta");
-  const data = await res.json();
-  return data.explanation;
-}
-
-// Simulación local
+// Simulación local (cuando no hay ninguna clave de IA configurada)
 async function fakeAiReview(item, selectedIndex, isCorrect) {
   await sleep(500);
   return isCorrect
@@ -691,7 +629,6 @@ async function connectSupabase() {
     CONFIG.SUPABASE_URL,
     CONFIG.SUPABASE_ANON_KEY
   );
-  el.status.textContent = "conectado";
 }
 
 function subscribeToAnswers() {
@@ -703,15 +640,47 @@ function subscribeToAnswers() {
       (payload) => {
         const { type, content, is_correct } = payload.new;
         if (type === "answer") {
-          const suffix = is_correct ? "(correcta)" : "(incorrecta)";
-          addTimelineItem("Respuesta (en vivo)", `${content} ${suffix}`, "answer");
-        }
-        if (type === "review") {
-          addTimelineItem("Comentario de la IA (en vivo)", content, "review");
+          handleRemoteAnswer(content, is_correct);
         }
       }
     )
-    .subscribe();
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        el.status.textContent = `${el.status.textContent} · conectado en vivo`;
+      }
+    });
+}
+
+// Se dispara cuando tu hijo responde desde su propio celular (hijo.html).
+// Actualiza el puntaje del papá, muestra la respuesta en la línea de tiempo,
+// y le pide a la IA un comentario que luego se manda de vuelta al hijo.
+async function handleRemoteAnswer(selectedText, isCorrect) {
+  score.total++;
+  if (isCorrect) score.correct++;
+  updateScoreDisplay();
+  saveQuizState();
+
+  addTimelineItem(
+    "Respuesta de tu hijo (en vivo)",
+    `${selectedText} ${isCorrect ? "(correcta)" : "(incorrecta)"}`,
+    "answer"
+  );
+
+  const item = questionBank[currentIndex];
+  if (!item) return;
+  const selectedIndex = item.options.indexOf(selectedText);
+
+  try {
+    const apiKey = getApiKey();
+    const explanation = apiKey
+      ? await reviewAnswerWithAI(apiKey, item, selectedIndex, isCorrect)
+      : await fakeAiReview(item, selectedIndex, isCorrect);
+
+    addTimelineItem("Comentario de la IA (en vivo)", explanation, "review");
+    await supabaseClient.from("quiz_turns").insert({ type: "review", content: explanation });
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 // =======================================================

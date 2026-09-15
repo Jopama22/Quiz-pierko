@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Preguntas para ti</title>
+<meta name="theme-color" content="#1D2A44" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=7" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+  <header class="topbar">
+    <span class="topbar__mark">●</span>
+    <h1 class="topbar__title">Preguntas para ti</h1>
+    <span class="topbar__score" id="scoreDisplay"></span>
+    <span class="topbar__status" id="connectionStatus">conectando…</span>
+  </header>
+
+  <main class="layout" style="grid-template-columns: 1fr; max-width: 600px;">
+    <section class="panel panel--child">
+      <div id="childQuestion" class="question-box question-box--child">Esperando una pregunta de tu papá…</div>
+      <div class="field">
+        <label>Elige una alternativa</label>
+        <div id="optionsList" class="options-list"></div>
+      </div>
+      <div id="answerFeedback" class="feedback" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script>
+    // =======================================================
+    // Página del hijo — se conecta a la misma tabla de Supabase que
+    // usa el papá, escucha preguntas nuevas y manda las respuestas.
+    // =======================================================
+    const SUPABASE_URL = "https://yjljeihokjqniuemtxuz.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_hhzJiWEZK7LZsg08gzdauQ_MtxU1CHf";
+
+    const el = {
+      status: document.getElementById("connectionStatus"),
+      scoreDisplay: document.getElementById("scoreDisplay"),
+      childQuestion: document.getElementById("childQuestion"),
+      optionsList: document.getElementById("optionsList"),
+      answerFeedback: document.getElementById("answerFeedback"),
+    };
+
+    let score = { correct: 0, total: 0 };
+    let currentItem = null; // { question, options, correctIndex }
+    let answered = false;
+
+    function updateScoreDisplay() {
+      el.scoreDisplay.textContent = score.total > 0 ? `Puntaje: ${score.correct}/${score.total}` : "";
+    }
+
+    function saveState() {
+      localStorage.setItem("hijo_state", JSON.stringify({ score }));
+    }
+
+    function restoreState() {
+      const saved = localStorage.getItem("hijo_state");
+      if (!saved) return;
+      try {
+        const state = JSON.parse(saved);
+        score = state.score || { correct: 0, total: 0 };
+        updateScoreDisplay();
+      } catch (e) {}
+    }
+
+    function renderQuestion(item) {
+      currentItem = item;
+      answered = false;
+      el.childQuestion.textContent = item.question;
+      el.answerFeedback.textContent = "";
+      el.optionsList.innerHTML = "";
+
+      item.options.forEach((optionText, index) => {
+        const btn = document.createElement("button");
+        btn.className = "option-btn";
+        btn.textContent = optionText;
+        btn.addEventListener("click", () => handleAnswer(index));
+        el.optionsList.appendChild(btn);
+      });
+    }
+
+    async function handleAnswer(selectedIndex) {
+      if (answered || !currentItem) return;
+      answered = true;
+
+      const isCorrect = selectedIndex === currentItem.correctIndex;
+      score.total++;
+      if (isCorrect) score.correct++;
+      updateScoreDisplay();
+      saveState();
+
+      const allButtons = el.optionsList.querySelectorAll(".option-btn");
+      allButtons.forEach((btn, i) => {
+        btn.disabled = true;
+        if (i === currentItem.correctIndex) btn.classList.add("option-btn--correct");
+        if (i === selectedIndex && !isCorrect) btn.classList.add("option-btn--wrong");
+      });
+
+      el.answerFeedback.textContent = isCorrect
+        ? "¡Correcto! 🎉 Esperando el comentario de tu papá…"
+        : "No era esa. Esperando el comentario de tu papá…";
+
+      await supabaseClient.from("quiz_turns").insert({
+        type: "answer",
+        content: currentItem.options[selectedIndex],
+        is_correct: isCorrect,
+      });
+    }
+
+    let supabaseClient;
+
+    function connectSupabase() {
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+      supabaseClient
+        .channel("quiz_turns_channel_hijo")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "quiz_turns" },
+          (payload) => {
+            const row = payload.new;
+            if (row.type === "question") {
+              renderQuestion({
+                question: row.content,
+                options: row.options,
+                correctIndex: row.correct_index,
+              });
+            }
+            if (row.type === "review") {
+              el.answerFeedback.textContent = row.content;
+            }
+          }
+        )
+        .subscribe((status) => {
+          el.status.textContent = status === "SUBSCRIBED" ? "conectado" : "conectando…";
+        });
+    }
+
+    restoreState();
+    connectSupabase();
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  </script>
+</body>
+</html>
