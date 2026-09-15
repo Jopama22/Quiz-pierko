@@ -14,7 +14,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v7";
+const APP_JS_VERSION = "v8";
 
 // =======================================================
 // ESTADO
@@ -76,6 +76,7 @@ function initConfigPage() {
   updateProxyVisibility(provider);
   console.log(`app.js cargado: ${APP_JS_VERSION}`);
   document.title = `Configuración (${APP_JS_VERSION})`;
+  renderDebugInfo();
 
   const savedKey = localStorage.getItem(`api_key_${provider}`);
   if (savedKey) {
@@ -92,9 +93,22 @@ function initConfigPage() {
     el.apiKeyInput.value = key || "";
     el.keyStatus.textContent = key ? "Clave guardada en este navegador." : "";
     el.proxyInput.value = localStorage.getItem(`proxy_url_${p}`) || "";
+    renderDebugInfo();
   });
 
   el.saveKeyBtn.addEventListener("click", handleSaveApiKey);
+}
+
+function renderDebugInfo() {
+  const box = document.getElementById("debugInfo");
+  if (!box) return;
+  const provider = localStorage.getItem("ai_provider") || "(no guardado, default gemini)";
+  const lines = ["gemini", "ollama", "groq"].map((p) => {
+    const hasKey = !!localStorage.getItem(`api_key_${p}`);
+    const proxy = localStorage.getItem(`proxy_url_${p}`);
+    return `${p}: clave ${hasKey ? "✅" : "❌"}${proxy ? `, proxy: ${proxy}` : ""}`;
+  });
+  box.innerHTML = `ai_provider guardado: <strong>${provider}</strong><br>${lines.join("<br>")}`;
 }
 
 // Gemini se puede llamar directo desde el navegador; Ollama y Groq necesitan
@@ -121,6 +135,7 @@ function handleSaveApiKey() {
   }
   localStorage.setItem(`api_key_${provider}`, key);
   el.keyStatus.textContent = "Clave guardada en este navegador. Ya puedes generar preguntas reales.";
+  renderDebugInfo();
 }
 
 // --- Página del quiz (index.html) ---
