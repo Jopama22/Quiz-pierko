@@ -14,7 +14,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v8";
+const APP_JS_VERSION = "v9";
 
 // =======================================================
 // ESTADO
@@ -62,8 +62,6 @@ function getApiKey() {
 // =======================================================
 // INICIO
 // =======================================================
-init();
-
 async function init() {
   if (el.providerSelect) initConfigPage();
   if (el.generateBtn) await initQuizPage();
@@ -677,3 +675,7 @@ function addTimelineItem(who, text, kind) {
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+// Se llama hasta el final, para que todas las variables y funciones
+// de arriba (incluida PROVIDERS_NEEDING_PROXY) ya estén definidas.
+init();
