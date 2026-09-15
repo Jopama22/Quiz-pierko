@@ -280,7 +280,8 @@ select {
   padding: 0.6rem;
 }
 
-input[type="password"] {
+input[type="password"],
+input[type="text"] {
   width: 100%;
   background: var(--navy);
   border: 1px solid var(--line);
