@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v17";
+const APP_JS_VERSION = "v18";
 
 // =======================================================
 // ESTADO
@@ -798,6 +798,7 @@ function addTimelineItem(who, text, kind) {
   li.className = `timeline__item timeline__item--${kind}`;
   li.innerHTML = `<span class="timeline__who">${who}</span>${text}`;
   el.timelineList.appendChild(li);
+  el.timelineList.scrollTop = el.timelineList.scrollHeight;
 }
 
 function sleep(ms) {
