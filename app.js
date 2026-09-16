@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v13";
+const APP_JS_VERSION = "v15";
 
 // =======================================================
 // ESTADO
@@ -32,6 +32,7 @@ const el = {
   pdfInput: document.getElementById("pdfInput"),
   pdfStatus: document.getElementById("pdfStatus"),
   generateBtn: document.getElementById("generateBtn"),
+  resetBtn: document.getElementById("resetBtn"),
   batchStatus: document.getElementById("batchStatus"),
   progressFill: document.getElementById("progressFill"),
   sendBtn: document.getElementById("sendBtn"),
@@ -157,12 +158,37 @@ async function initQuizPage() {
   }
 
   el.generateBtn.addEventListener("click", handleGenerateBatch);
+  el.resetBtn.addEventListener("click", handleResetAll);
   el.sendBtn.addEventListener("click", handleSendNextQuestion);
   el.pdfInput.addEventListener("change", handlePdfUpload);
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
+}
+
+// =======================================================
+// REINICIAR TODO (lote, puntaje, línea de tiempo y avisa al hijo)
+// =======================================================
+async function handleResetAll() {
+  if (!confirm("¿Reiniciar todo? Se borra el lote actual, el puntaje y la conversación.")) return;
+
+  questionBank = [];
+  currentIndex = -1;
+  score = { correct: 0, total: 0 };
+  localStorage.removeItem("quiz_state");
+
+  updateScoreDisplay();
+  updateProgressBar();
+  el.batchStatus.textContent = "Todavía no se ha generado ningún lote.";
+  el.sendBtn.disabled = true;
+  el.timelineList.innerHTML = "";
+  el.childQuestion.textContent = "Esperando una pregunta…";
+  el.optionsList.innerHTML = "";
+  el.answerFeedback.textContent = "";
+
+  const { error } = await supabaseClient.from("quiz_turns").insert({ type: "reset", content: "reinicio" });
+  if (error) console.error("Error avisando el reinicio:", error);
 }
 
 // =======================================================
@@ -523,12 +549,16 @@ async function handleSendNextQuestion() {
   updateProgressBar();
   saveQuizState();
 
-  await supabaseClient.from("quiz_turns").insert({
+  const { error } = await supabaseClient.from("quiz_turns").insert({
     type: "question",
     content: item.question,
     options: item.options,
     correct_index: item.correctIndex,
   });
+  if (error) {
+    el.batchStatus.textContent = `Error al enviar a Supabase: ${error.message}`;
+    console.error(error);
+  }
 }
 
 // =======================================================
@@ -677,7 +707,8 @@ async function handleRemoteAnswer(selectedText, isCorrect) {
       : await fakeAiReview(item, selectedIndex, isCorrect);
 
     addTimelineItem("Comentario de la IA (en vivo)", explanation, "review");
-    await supabaseClient.from("quiz_turns").insert({ type: "review", content: explanation });
+    const { error } = await supabaseClient.from("quiz_turns").insert({ type: "review", content: explanation });
+    if (error) console.error("Error insertando review:", error);
   } catch (err) {
     console.error(err);
   }

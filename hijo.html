@@ -108,11 +108,15 @@
         ? "¡Correcto! 🎉 Esperando el comentario de tu papá…"
         : "No era esa. Esperando el comentario de tu papá…";
 
-      await supabaseClient.from("quiz_turns").insert({
+      const { error } = await supabaseClient.from("quiz_turns").insert({
         type: "answer",
         content: currentItem.options[selectedIndex],
         is_correct: isCorrect,
       });
+      if (error) {
+        el.answerFeedback.textContent = `Error al enviar: ${error.message}`;
+        console.error(error);
+      }
     }
 
     let supabaseClient;
@@ -128,7 +132,7 @@
 
       // Busca la pregunta más reciente que todavía no tenga una respuesta después de ella
       for (const row of data) {
-        if (row.type === "answer") return; // ya se respondió la más reciente
+        if (row.type === "answer" || row.type === "reset") return; // ya se respondió o se reinició
         if (row.type === "question") {
           renderQuestion({
             question: row.content,
@@ -159,6 +163,16 @@
             }
             if (row.type === "review") {
               el.answerFeedback.textContent = row.content;
+            }
+            if (row.type === "reset") {
+              score = { correct: 0, total: 0 };
+              updateScoreDisplay();
+              saveState();
+              currentItem = null;
+              answered = false;
+              el.childQuestion.textContent = "Esperando una pregunta de tu papá…";
+              el.optionsList.innerHTML = "";
+              el.answerFeedback.textContent = "";
             }
           }
         )
