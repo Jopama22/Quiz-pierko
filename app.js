@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v21";
+const APP_JS_VERSION = "v22";
 
 // =======================================================
 // ESTADO
@@ -259,6 +259,31 @@ function fileToBase64(file) {
   });
 }
 
+// Reduce el tamaño de la imagen (máx. 900px de ancho, JPEG calidad 0.7)
+// para que no sea demasiado pesada al mandarla por Supabase en tiempo real.
+function compressImage(file, maxWidth = 900, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve({ base64: dataUrl.split(",")[1], mimeType: "image/jpeg", dataUrl });
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 async function handlePdfUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -274,8 +299,8 @@ async function handlePdfUpload(event) {
 
     el.pdfStatus.textContent = "Cargando imagen…";
     try {
-      const base64 = await fileToBase64(file);
-      uploadedImage = { base64, mimeType: file.type, name: file.name };
+      const compressed = await compressImage(file);
+      uploadedImage = compressed;
       el.topicInput.value = ""; // la imagen reemplaza al texto como fuente
       el.pdfStatus.textContent = `Imagen cargada: "${file.name}". Gemini la va a analizar directamente al generar las preguntas.`;
     } catch (err) {
@@ -540,26 +565,35 @@ async function generateQuestionsWithAI(apiKey, topic, count) {
   return allQuestions.slice(0, count);
 }
 
-// Genera preguntas a partir de una foto (Gemini analiza la imagen directamente)
+// Genera preguntas a partir de una foto (Gemini analiza la imagen directamente).
+// La imagen ORIGINAL se muestra tal cual junto a cada pregunta — así las figuras,
+// tablas o diagramas de la foto se ven de verdad, en vez de que la IA intente redibujarlos.
 async function generateQuestionsFromImage(apiKey, image, count) {
   const prompt = `Eres un generador de preguntas educativas de opción múltiple para un niño.
 Observa la imagen adjunta (puede ser una página de un libro, un examen, una tabla, un gráfico
-o un ejercicio) y genera exactamente ${count} preguntas basadas en su contenido.
-Cada pregunta debe tener 4 alternativas y un "correctIndex" (0 a 3) indicando cuál es la correcta.
-Si la imagen ya trae preguntas de opción múltiple, puedes reformularlas o usarlas tal cual.
-Si necesitas incluir una tabla de datos, agrega un campo opcional "table" (array de arrays de
-strings), y en ese caso el texto de "question" NO debe repetir los datos de la tabla.
+o un ejercicio con figuras). La imagen se le va a mostrar tal cual al niño junto con la pregunta,
+así que:
+- En "question" escribe solo el enunciado o la pregunta en sí (sin describir la figura, ya que se ve en la foto).
+- Si la imagen ya muestra alternativas con letras o dibujos (A, B, C, D, E...), en "options" pon
+  SOLO esas letras en orden, por ejemplo ["A", "B", "C", "D", "E"] — no describas los dibujos.
+- Si la imagen no trae alternativas visuales, escribe en "options" el texto normal de 4 alternativas.
+- "correctIndex" es el índice (0 en adelante) de la alternativa correcta.
+Si la imagen tiene varias preguntas distintas, genera hasta ${count} preguntas, una por cada una
+(si solo hay una pregunta en la imagen, genera solo esa).
 
 Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloques de código, con este formato exacto:
-[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0, "table": null}]`;
+[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
 
   const raw = await callGemini(apiKey, prompt, true, image);
   const cleaned = raw.replace(/```json|```/g, "").trim();
+  let parsed;
   try {
-    return JSON.parse(cleaned);
+    parsed = JSON.parse(cleaned);
   } catch (e) {
     throw new Error(`La IA no devolvió un JSON válido: ${cleaned.slice(0, 200)}`);
   }
+  // Le pega la foto original a cada pregunta, para mostrarla de verdad
+  return parsed.map((q) => ({ ...q, image: image.dataUrl }));
 }
 
 async function generateQuestionsForChunk(apiKey, chunkText, count) {
@@ -644,6 +678,7 @@ async function handleSendNextQuestion() {
     correct_index: item.correctIndex,
     table_data: item.table || null,
     chart_data: item.chart || null,
+    image_data: item.image || null,
   });
   if (error) {
     el.batchStatus.textContent = `Error al enviar a Supabase: ${error.message}`;
@@ -678,7 +713,11 @@ function escapeHtml(str) {
 }
 
 function renderQuestionHTML(item) {
-  let html = `<div class="question-text">${escapeHtml(item.question).replace(/\n/g, "<br>")}</div>`;
+  let html = "";
+  if (item.image) {
+    html += `<img src="${item.image}" alt="Imagen de la pregunta" class="quiz-image" />`;
+  }
+  html += `<div class="question-text">${escapeHtml(item.question).replace(/\n/g, "<br>")}</div>`;
 
   if (item.table && Array.isArray(item.table)) {
     html += renderTableHTML(item.table);

@@ -92,6 +92,14 @@ body {
   margin-bottom: 0.6rem;
 }
 
+.quiz-image {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 8px;
+  margin-bottom: 0.6rem;
+  display: block;
+}
+
 .quiz-table {
   border-collapse: collapse;
   margin: 0.6rem 0;
