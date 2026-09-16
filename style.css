@@ -88,6 +88,30 @@ body {
   user-select: all;
 }
 
+.question-text {
+  margin-bottom: 0.6rem;
+}
+
+.quiz-table {
+  border-collapse: collapse;
+  margin: 0.6rem 0;
+  font-size: 0.9rem;
+}
+
+.quiz-table td {
+  border: 1px solid var(--line);
+  padding: 0.4rem 0.7rem;
+  text-align: center;
+}
+
+.quiz-chart {
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  margin: 0.6rem 0;
+  display: block;
+}
+
 .topbar__settings {
   text-decoration: none;
   font-size: 1.1rem;

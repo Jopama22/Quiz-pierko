@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v16";
+const APP_JS_VERSION = "v17";
 
 // =======================================================
 // ESTADO
@@ -495,10 +495,18 @@ Genera exactamente ${count} preguntas. Cada pregunta debe tener 4 alternativas y
 "correctIndex" (0 a 3) indicando cuál es la correcta.
 Varía el enfoque y la redacción de las preguntas — evita repetir siempre las mismas preguntas obvias sobre el tema.
 
+Si una pregunta necesita mostrar datos en una tabla (por ejemplo pares de números), agrega
+un campo opcional "table": un array de arrays de strings (cada array interno es una fila).
+Si necesita mostrar una secuencia de enunciados (I, II, III...), inclúyelos directamente en
+el texto de "question" separados por saltos de línea (\\n).
+Si necesita un gráfico de línea simple con un par de puntos numéricos, agrega un campo
+opcional "chart": {"type": "line", "points": [{"x":6,"y":26},{"x":14,"y":42}], "xLabel":"hora", "yLabel":"°C"}.
+Usa "table" o "chart" SOLO cuando la pregunta realmente lo necesite; la mayoría de preguntas no los necesitan.
+
 ${temaTexto}
 
 Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloques de código, con este formato exacto:
-[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
+[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0, "table": null, "chart": null}]`;
 
   const raw = await callAI(apiKey, prompt, true);
   const cleaned = raw.replace(/```json|```/g, "").trim();
@@ -554,6 +562,8 @@ async function handleSendNextQuestion() {
     content: item.question,
     options: item.options,
     correct_index: item.correctIndex,
+    table_data: item.table || null,
+    chart_data: item.chart || null,
   });
   if (error) {
     el.batchStatus.textContent = `Error al enviar a Supabase: ${error.message}`;
@@ -565,7 +575,7 @@ async function handleSendNextQuestion() {
 // 3. VISTA DEL HIJO: pregunta + botones de alternativas
 // =======================================================
 function renderQuestionForChild(item) {
-  el.childQuestion.textContent = item.question;
+  el.childQuestion.innerHTML = renderQuestionHTML(item);
   el.answerFeedback.textContent = "";
   el.optionsList.innerHTML = "";
 
@@ -576,6 +586,68 @@ function renderQuestionForChild(item) {
     btn.addEventListener("click", () => handleChildAnswer(index, item, btn));
     el.optionsList.appendChild(btn);
   });
+}
+
+// =======================================================
+// RENDERIZADO DE PREGUNTAS CON TABLA / GRÁFICO OPCIONAL
+// =======================================================
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function renderQuestionHTML(item) {
+  let html = `<div class="question-text">${escapeHtml(item.question).replace(/\n/g, "<br>")}</div>`;
+
+  if (item.table && Array.isArray(item.table)) {
+    html += renderTableHTML(item.table);
+  }
+  if (item.chart && item.chart.type === "line" && Array.isArray(item.chart.points)) {
+    html += renderLineChartSVG(item.chart);
+  }
+  return html;
+}
+
+function renderTableHTML(table) {
+  const rows = table
+    .map(
+      (row) =>
+        "<tr>" + row.map((cell) => `<td>${escapeHtml(String(cell))}</td>`).join("") + "</tr>"
+    )
+    .join("");
+  return `<table class="quiz-table">${rows}</table>`;
+}
+
+function renderLineChartSVG(chart) {
+  const points = chart.points;
+  const width = 300, height = 160, pad = 30;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const scaleX = (x) => pad + ((x - minX) / (maxX - minX || 1)) * (width - pad * 1.5);
+  const scaleY = (y) => height - pad - ((y - minY) / (maxY - minY || 1)) * (height - pad * 1.5);
+
+  const linePoints = points.map((p) => `${scaleX(p.x)},${scaleY(p.y)}`).join(" ");
+  const dots = points
+    .map(
+      (p) =>
+        `<circle cx="${scaleX(p.x)}" cy="${scaleY(p.y)}" r="3.5" fill="#F4B942" />
+         <text x="${scaleX(p.x)}" y="${scaleY(p.y) - 8}" fill="#F6F1E7" font-size="11" text-anchor="middle">${p.y}</text>
+         <text x="${scaleX(p.x)}" y="${height - pad + 15}" fill="#9BA9C9" font-size="10" text-anchor="middle">${p.x}</text>`
+    )
+    .join("");
+
+  return `
+    <svg class="quiz-chart" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+      <line x1="${pad}" y1="${height - pad}" x2="${width - 10}" y2="${height - pad}" stroke="#3A4B70" />
+      <line x1="${pad}" y1="10" x2="${pad}" y2="${height - pad}" stroke="#3A4B70" />
+      <polyline points="${linePoints}" fill="none" stroke="#F4B942" stroke-width="2" />
+      ${dots}
+      ${chart.xLabel ? `<text x="${width - 15}" y="${height - 8}" fill="#9BA9C9" font-size="10" text-anchor="end">${escapeHtml(chart.xLabel)}</text>` : ""}
+      ${chart.yLabel ? `<text x="${pad}" y="12" fill="#9BA9C9" font-size="10">${escapeHtml(chart.yLabel)}</text>` : ""}
+    </svg>`;
 }
 
 // =======================================================
