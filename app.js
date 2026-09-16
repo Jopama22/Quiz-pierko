@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v19";
+const APP_JS_VERSION = "v21";
 
 // =======================================================
 // ESTADO
@@ -20,6 +20,8 @@ let questionBank = [];   // [{ question, options: [...4], correctIndex }]
 let currentIndex = -1;
 let supabaseClient = null;
 let score = { correct: 0, total: 0 };
+let baseStatusText = "";
+let uploadedImage = null; // { base64, mimeType, name }
 
 // =======================================================
 // ELEMENTOS
@@ -147,7 +149,8 @@ async function initQuizPage() {
   const apiKey = getApiKey();
   const nombres = { gemini: "Gemini", ollama: "Ollama Cloud", groq: "Groq" };
   const aiLabel = apiKey ? `IA: ${nombres[getProvider()] || getProvider()}` : "IA: modo demo";
-  el.status.textContent = `${aiLabel} (js ${APP_JS_VERSION})`;
+  baseStatusText = `${aiLabel} (js ${APP_JS_VERSION})`;
+  el.status.textContent = baseStatusText;
 
   await connectSupabase();
   subscribeToAnswers();
@@ -161,6 +164,13 @@ async function initQuizPage() {
   el.resetBtn.addEventListener("click", handleResetAll);
   el.sendBtn.addEventListener("click", handleSendNextQuestion);
   el.pdfInput.addEventListener("change", handlePdfUpload);
+  el.topicInput.addEventListener("input", () => {
+    if (uploadedImage) {
+      uploadedImage = null;
+      el.pdfStatus.textContent = "";
+      el.pdfInput.value = "";
+    }
+  });
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
@@ -176,6 +186,9 @@ async function handleResetAll() {
   questionBank = [];
   currentIndex = -1;
   score = { correct: 0, total: 0 };
+  uploadedImage = null;
+  el.pdfInput.value = "";
+  el.pdfStatus.textContent = "";
   localStorage.removeItem("quiz_state");
 
   updateScoreDisplay();
@@ -237,10 +250,42 @@ function restoreQuizState() {
 // =======================================================
 // 0. SUBIR PDF Y EXTRAER TEXTO (se usa como material del RAG)
 // =======================================================
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 async function handlePdfUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
 
+  if (file.type.startsWith("image/")) {
+    const apiKey = getApiKey();
+    if (getProvider() !== "gemini" || !apiKey) {
+      el.pdfStatus.textContent =
+        "Para usar fotos, primero elige Gemini como proveedor en Configuración y guarda tu clave.";
+      event.target.value = "";
+      return;
+    }
+
+    el.pdfStatus.textContent = "Cargando imagen…";
+    try {
+      const base64 = await fileToBase64(file);
+      uploadedImage = { base64, mimeType: file.type, name: file.name };
+      el.topicInput.value = ""; // la imagen reemplaza al texto como fuente
+      el.pdfStatus.textContent = `Imagen cargada: "${file.name}". Gemini la va a analizar directamente al generar las preguntas.`;
+    } catch (err) {
+      el.pdfStatus.textContent = "No se pudo cargar la imagen. Intenta con otra.";
+      console.error(err);
+    }
+    return;
+  }
+
+  uploadedImage = null;
   el.pdfStatus.textContent = "Leyendo PDF…";
   pdfjsLib.GlobalWorkerOptions.workerSrc =
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -279,9 +324,13 @@ async function handleGenerateBatch() {
 
   try {
     const apiKey = getApiKey();
-    questionBank = apiKey
-      ? await generateQuestionsWithAI(apiKey, topic, count)
-      : await fakeGenerateQuestions(topic, count);
+    if (uploadedImage) {
+      questionBank = await generateQuestionsFromImage(apiKey, uploadedImage, count);
+    } else {
+      questionBank = apiKey
+        ? await generateQuestionsWithAI(apiKey, topic, count)
+        : await fakeGenerateQuestions(topic, count);
+    }
 
     currentIndex = -1;
     score = { correct: 0, total: 0 };
@@ -311,9 +360,15 @@ async function callAI(apiKey, prompt, forceJson) {
   return callGemini(apiKey, prompt, forceJson);
 }
 
-async function callGemini(apiKey, prompt, forceJson, attempt = 1) {
+async function callGemini(apiKey, prompt, forceJson, image, attempt = 1) {
+  const parts = [];
+  if (image) {
+    parts.push({ inline_data: { mime_type: image.mimeType, data: image.base64 } });
+  }
+  parts.push({ text: prompt });
+
   const body = {
-    contents: [{ parts: [{ text: prompt }] }],
+    contents: [{ parts }],
     generationConfig: { temperature: 1.0 },
   };
   if (forceJson) {
@@ -333,7 +388,7 @@ async function callGemini(apiKey, prompt, forceJson, attempt = 1) {
     // Si el modelo está saturado (503), reintenta una vez después de una pausa breve
     if (res.status === 503 && attempt < 3) {
       await sleep(1500 * attempt);
-      return callGemini(apiKey, prompt, forceJson, attempt + 1);
+      return callGemini(apiKey, prompt, forceJson, image, attempt + 1);
     }
     const errText = await res.text();
     throw new Error(`Error de Gemini (${res.status}): ${errText}`);
@@ -483,6 +538,28 @@ async function generateQuestionsWithAI(apiKey, topic, count) {
   }
 
   return allQuestions.slice(0, count);
+}
+
+// Genera preguntas a partir de una foto (Gemini analiza la imagen directamente)
+async function generateQuestionsFromImage(apiKey, image, count) {
+  const prompt = `Eres un generador de preguntas educativas de opción múltiple para un niño.
+Observa la imagen adjunta (puede ser una página de un libro, un examen, una tabla, un gráfico
+o un ejercicio) y genera exactamente ${count} preguntas basadas en su contenido.
+Cada pregunta debe tener 4 alternativas y un "correctIndex" (0 a 3) indicando cuál es la correcta.
+Si la imagen ya trae preguntas de opción múltiple, puedes reformularlas o usarlas tal cual.
+Si necesitas incluir una tabla de datos, agrega un campo opcional "table" (array de arrays de
+strings), y en ese caso el texto de "question" NO debe repetir los datos de la tabla.
+
+Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloques de código, con este formato exacto:
+[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0, "table": null}]`;
+
+  const raw = await callGemini(apiKey, prompt, true, image);
+  const cleaned = raw.replace(/```json|```/g, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    throw new Error(`La IA no devolvió un JSON válido: ${cleaned.slice(0, 200)}`);
+  }
 }
 
 async function generateQuestionsForChunk(apiKey, chunkText, count) {
@@ -751,7 +828,7 @@ function subscribeToAnswers() {
     )
     .subscribe((status) => {
       if (status === "SUBSCRIBED") {
-        el.status.textContent = `${el.status.textContent} · conectado en vivo`;
+        el.status.textContent = `${baseStatusText} · conectado en vivo`;
       }
     });
 }
