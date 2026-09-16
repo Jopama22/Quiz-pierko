@@ -289,12 +289,24 @@ input[type="number"] {
   background: var(--sun);
 }
 
-.timeline__item--answer::before {
+.timeline__item--correct::before {
   background: #6FE3B4;
+}
+
+.timeline__item--incorrect::before {
+  background: #E36F6F;
 }
 
 .timeline__item--review::before {
   background: #9B8CF2;
+}
+
+.timeline__item--correct {
+  color: #A9F0D1;
+}
+
+.timeline__item--incorrect {
+  color: #F3B3B3;
 }
 
 .timeline__who {

@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v15";
+const APP_JS_VERSION = "v16";
 
 // =======================================================
 // ESTADO
@@ -601,7 +601,7 @@ async function handleChildAnswer(selectedIndex, item, clickedBtn) {
   addTimelineItem(
     "Respuesta",
     `${item.options[selectedIndex]} ${isCorrect ? "(correcta)" : "(incorrecta)"}`,
-    "answer"
+    isCorrect ? "correct" : "incorrect"
   );
 
   // La IA revisa la respuesta y da una explicación breve (esto sí usa el modelo,
@@ -690,10 +690,14 @@ async function handleRemoteAnswer(selectedText, isCorrect) {
   updateScoreDisplay();
   saveQuizState();
 
+  el.batchStatus.textContent = isCorrect
+    ? `✅ Tu hijo respondió: "${selectedText}" — ¡correcta!`
+    : `❌ Tu hijo respondió: "${selectedText}" — incorrecta`;
+
   addTimelineItem(
     "Respuesta de tu hijo (en vivo)",
     `${selectedText} ${isCorrect ? "(correcta)" : "(incorrecta)"}`,
-    "answer"
+    isCorrect ? "correct" : "incorrect"
   );
 
   const item = questionBank[currentIndex];
@@ -719,7 +723,7 @@ async function handleRemoteAnswer(selectedText, isCorrect) {
 // =======================================================
 function addTimelineItem(who, text, kind) {
   const li = document.createElement("li");
-  li.className = `timeline__item ${kind === "answer" ? "timeline__item--answer" : ""}`;
+  li.className = `timeline__item timeline__item--${kind}`;
   li.innerHTML = `<span class="timeline__who">${who}</span>${text}`;
   el.timelineList.appendChild(li);
 }
