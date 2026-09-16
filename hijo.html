@@ -40,6 +40,7 @@
     // =======================================================
     const SUPABASE_URL = "https://yjljeihokjqniuemtxuz.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_hhzJiWEZK7LZsg08gzdauQ_MtxU1CHf";
+    const HIJO_VERSION = "h1";
 
     const el = {
       status: document.getElementById("connectionStatus"),
@@ -222,7 +223,7 @@
           }
         )
         .subscribe(async (status) => {
-          el.status.textContent = status === "SUBSCRIBED" ? "conectado" : "conectando…";
+          el.status.textContent = status === "SUBSCRIBED" ? `conectado (${HIJO_VERSION})` : "conectando…";
           if (status === "SUBSCRIBED") await fetchLatestQuestion();
         });
     }

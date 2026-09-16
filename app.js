@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v18";
+const APP_JS_VERSION = "v19";
 
 // =======================================================
 // ESTADO
@@ -497,6 +497,9 @@ Varía el enfoque y la redacción de las preguntas — evita repetir siempre las
 
 Si una pregunta necesita mostrar datos en una tabla (por ejemplo pares de números), agrega
 un campo opcional "table": un array de arrays de strings (cada array interno es una fila).
+IMPORTANTE: cuando uses "table", el texto de "question" NO debe repetir los datos de la
+tabla — solo describe qué se debe hacer (ej: "En la siguiente tabla, ¿cuánto vale x + y?"),
+los números van únicamente en el campo "table".
 Si necesita mostrar una secuencia de enunciados (I, II, III...), inclúyelos directamente en
 el texto de "question" separados por saltos de línea (\\n).
 Si necesita un gráfico de línea simple con un par de puntos numéricos, agrega un campo
