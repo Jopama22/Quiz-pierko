@@ -202,6 +202,16 @@
       return text;
     }
 
+    // Cuando se pide 1 sola pregunta (o el modelo decide hacerlo distinto), a veces
+    // Gemini/Groq devuelven un objeto suelto o {questions:[...]} en vez de un array.
+    // Esto lo normaliza siempre a un array de preguntas.
+    function normalizeQuestions(parsed) {
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && Array.isArray(parsed.questions)) return parsed.questions;
+      if (parsed && typeof parsed === "object" && parsed.question) return [parsed];
+      throw new Error("La IA no devolvió una lista de preguntas reconocible.");
+    }
+
     async function generateQuestionsWithAI(apiKey, topic, count) {
       const MAX_TOPIC_CHARS = 12000;
       const trimmedTopic = topic.length > MAX_TOPIC_CHARS ? topic.slice(0, MAX_TOPIC_CHARS) : topic;
@@ -216,13 +226,14 @@ Varía el enfoque y la redacción de las preguntas — evita repetir siempre las
 
 ${temaTexto}
 
-Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloques de código, con este formato exacto:
+Responde ÚNICAMENTE con un JSON válido (un array, incluso si es una sola pregunta), sin texto
+adicional ni bloques de código, con este formato exacto:
 [{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
 
       const raw = await callAI(apiKey, prompt, true);
       const cleaned = raw.replace(/```json|```/g, "").trim();
       try {
-        return JSON.parse(cleaned);
+        return normalizeQuestions(JSON.parse(cleaned));
       } catch (e) {
         throw new Error(`La IA no devolvió un JSON válido: ${cleaned.slice(0, 200)}`);
       }
@@ -241,14 +252,15 @@ así que:
 Si la imagen tiene varias preguntas distintas, genera hasta ${count} preguntas, una por cada una
 (si solo hay una pregunta en la imagen, genera solo esa).
 
-Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloques de código, con este formato exacto:
+Responde ÚNICAMENTE con un JSON válido (un array, incluso si es una sola pregunta), sin texto
+adicional ni bloques de código, con este formato exacto:
 [{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
 
       const raw = await callGemini(apiKey, prompt, true, image);
       const cleaned = raw.replace(/```json|```/g, "").trim();
       let parsed;
       try {
-        parsed = JSON.parse(cleaned);
+        parsed = normalizeQuestions(JSON.parse(cleaned));
       } catch (e) {
         throw new Error(`La IA no devolvió un JSON válido: ${cleaned.slice(0, 200)}`);
       }

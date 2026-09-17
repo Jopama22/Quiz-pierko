@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v25";
+const APP_JS_VERSION = "v26";
 
 // =======================================================
 // ESTADO
@@ -569,12 +569,22 @@ Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloq
   const cleaned = raw.replace(/```json|```/g, "").trim();
   let parsed;
   try {
-    parsed = JSON.parse(cleaned);
+    parsed = normalizeQuestions(JSON.parse(cleaned));
   } catch (e) {
     throw new Error(`La IA no devolvió un JSON válido: ${cleaned.slice(0, 200)}`);
   }
   // Le pega la foto original a cada pregunta, para mostrarla de verdad
   return parsed.map((q) => ({ ...q, image: image.dataUrl }));
+}
+
+// Cuando se pide 1 sola pregunta (o el modelo decide hacerlo distinto), a veces
+// Gemini/Groq devuelven un objeto suelto o {questions:[...]} en vez de un array.
+// Esto lo normaliza siempre a un array de preguntas.
+function normalizeQuestions(parsed) {
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && Array.isArray(parsed.questions)) return parsed.questions;
+  if (parsed && typeof parsed === "object" && parsed.question) return [parsed];
+  throw new Error("La IA no devolvió una lista de preguntas reconocible.");
 }
 
 async function generateQuestionsForChunk(apiKey, chunkText, count) {
@@ -600,13 +610,14 @@ Usa "table" o "chart" SOLO cuando la pregunta realmente lo necesite; la mayoría
 
 ${temaTexto}
 
-Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloques de código, con este formato exacto:
+Responde ÚNICAMENTE con un JSON válido (un array, incluso si es una sola pregunta), sin texto
+adicional ni bloques de código, con este formato exacto:
 [{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0, "table": null, "chart": null}]`;
 
   const raw = await callAI(apiKey, prompt, true);
   const cleaned = raw.replace(/```json|```/g, "").trim();
   try {
-    return JSON.parse(cleaned);
+    return normalizeQuestions(JSON.parse(cleaned));
   } catch (e) {
     throw new Error(`La IA no devolvió un JSON válido: ${cleaned.slice(0, 200)}`);
   }
