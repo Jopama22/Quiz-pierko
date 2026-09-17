@@ -38,6 +38,8 @@
         <label for="qImage">Imagen (opcional)</label>
         <input type="file" id="qImage" accept="image/*" />
         <div id="qImageStatus" class="pdf-status"></div>
+        <img id="qImagePreview" class="quiz-image" style="display:none; margin-top:0.6rem; max-height:220px;" alt="Vista previa de la imagen" />
+        <button type="button" id="qImageRemove" class="btn btn--secondary" style="display:none;">Quitar imagen</button>
       </div>
 
       <div class="field">
@@ -73,6 +75,8 @@
       qText: document.getElementById("qText"),
       qImage: document.getElementById("qImage"),
       qImageStatus: document.getElementById("qImageStatus"),
+      qImagePreview: document.getElementById("qImagePreview"),
+      qImageRemove: document.getElementById("qImageRemove"),
       optionsContainer: document.getElementById("optionsContainer"),
       addOptionBtn: document.getElementById("addOptionBtn"),
       qExplanation: document.getElementById("qExplanation"),
@@ -159,10 +163,22 @@
       try {
         uploadedImage = await compressImage(file);
         el.qImageStatus.textContent = `Imagen cargada: "${file.name}".`;
+        el.qImagePreview.src = uploadedImage;
+        el.qImagePreview.style.display = "block";
+        el.qImageRemove.style.display = "block";
       } catch (err) {
         el.qImageStatus.textContent = "No se pudo cargar la imagen.";
         uploadedImage = null;
       }
+    });
+
+    el.qImageRemove.addEventListener("click", () => {
+      uploadedImage = null;
+      el.qImage.value = "";
+      el.qImageStatus.textContent = "";
+      el.qImagePreview.src = "";
+      el.qImagePreview.style.display = "none";
+      el.qImageRemove.style.display = "none";
     });
 
     // --- Guardar la pregunta armada en el banco permanente ---
@@ -203,6 +219,9 @@
       el.qExplanation.value = "";
       el.qImage.value = "";
       el.qImageStatus.textContent = "";
+      el.qImagePreview.src = "";
+      el.qImagePreview.style.display = "none";
+      el.qImageRemove.style.display = "none";
       uploadedImage = null;
       resetOptionRows();
       el.formStatus.textContent = "Pregunta guardada en el banco.";
