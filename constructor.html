@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icon-192.png" />
 <link rel="apple-touch-icon" href="icon-192.png" />
-<link rel="stylesheet" href="style.css?v=9" />
+<link rel="stylesheet" href="style.css?v=10" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
@@ -91,6 +91,7 @@
       </div>
 
       <button id="addQuestionBtn" class="btn btn--primary">Guardar pregunta en el banco</button>
+      <button id="cancelEditBtn" class="btn btn--secondary" style="display:none;">Cancelar edición</button>
       <div id="formStatus" class="pdf-status"></div>
     </section>
 
@@ -99,7 +100,7 @@
       <p style="font-size:0.82rem; color:#9BA9C9; margin-top:-0.4rem;">
         Quedan guardadas para siempre (aunque reinicies el quiz). Marca las que quieras mandar ahora — se envían en orden aleatorio.
       </p>
-      <div id="bankList"></div>
+      <div id="bankList" class="scroll-list"></div>
       <button id="sendSelectedBtn" class="btn btn--primary" disabled>Enviar seleccionadas al panel del papá (aleatorio)</button>
     </section>
   </main>
@@ -413,7 +414,10 @@ adicional ni bloques de código, con este formato exacto:
       bankCount: document.getElementById("bankCount"),
       bankList: document.getElementById("bankList"),
       sendSelectedBtn: document.getElementById("sendSelectedBtn"),
+      cancelEditBtn: document.getElementById("cancelEditBtn"),
     };
+
+    let editingId = null;     // id de la pregunta del banco que se está editando (null = creando nueva)
 
     let uploadedImage = null; // dataURL de la imagen ya comprimida (pregunta manual)
     let aiUploadedImage = null; // { base64, mimeType, dataUrl } de la foto para que Gemini la analice
@@ -433,7 +437,7 @@ adicional ni bloques de código, con este formato exacto:
     }
 
     // --- Alternativas dinámicas (arranca con 4, mínimo 2, máximo 6) ---
-    function addOptionRow(checked = false) {
+    function addOptionRow(checked = false, text = "") {
       const rows = el.optionsContainer.querySelectorAll(".option-row").length;
       if (rows >= 6) return;
 
@@ -441,7 +445,7 @@ adicional ni bloques de código, con este formato exacto:
       row.className = "option-row";
       row.innerHTML = `
         <input type="radio" name="correctOption" ${checked ? "checked" : ""} title="Marcar como correcta" />
-        <input type="text" placeholder="Texto de la alternativa" />
+        <input type="text" placeholder="Texto de la alternativa" value="${text.replace(/"/g, "&quot;")}" />
         <button type="button" class="option-row__remove" title="Quitar">✕</button>
       `;
       row.querySelector(".option-row__remove").addEventListener("click", () => {
@@ -535,7 +539,7 @@ adicional ni bloques de código, con este formato exacto:
       el.qImageRemove.style.display = "none";
     });
 
-    // --- Guardar la pregunta armada en el banco permanente ---
+    // --- Guardar la pregunta armada en el banco permanente (o guardar cambios si se está editando) ---
     el.addQuestionBtn.addEventListener("click", () => {
       const question = el.qText.value.trim();
       if (!question) {
@@ -556,19 +560,84 @@ adicional ni bloques de código, con este formato exacto:
         return;
       }
 
-      bank.push({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        question,
-        options,
-        correctIndex: correctRow,
-        image: uploadedImage || null,
-        explanation: el.qExplanation.value.trim() || null,
-        subject: el.qSubject.value.trim() || null,
-        selected: true, // recién creada: queda marcada para el próximo envío
-      });
-      saveBank();
+      if (editingId) {
+        const existing = bank.find((b) => b.id === editingId);
+        if (existing) {
+          existing.question = question;
+          existing.options = options;
+          existing.correctIndex = correctRow;
+          existing.image = uploadedImage || null;
+          existing.explanation = el.qExplanation.value.trim() || null;
+          existing.subject = el.qSubject.value.trim() || null;
+        }
+        saveBank();
+        el.formStatus.textContent = "Cambios guardados.";
+        cancelEdit();
+      } else {
+        bank.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          question,
+          options,
+          correctIndex: correctRow,
+          image: uploadedImage || null,
+          explanation: el.qExplanation.value.trim() || null,
+          subject: el.qSubject.value.trim() || null,
+          selected: true, // recién creada: queda marcada para el próximo envío
+        });
+        saveBank();
+        el.formStatus.textContent = "Pregunta guardada en el banco.";
 
-      // Reset del formulario para la siguiente pregunta (la materia se mantiene, suele repetirse)
+        // Reset del formulario para la siguiente pregunta (la materia se mantiene, suele repetirse)
+        el.qText.value = "";
+        el.qExplanation.value = "";
+        el.qImage.value = "";
+        el.qImageStatus.textContent = "";
+        el.qImagePreview.src = "";
+        el.qImagePreview.style.display = "none";
+        el.qImageRemove.style.display = "none";
+        uploadedImage = null;
+        resetOptionRows();
+      }
+
+      renderBank();
+    });
+
+    // --- Cargar una pregunta del banco en el formulario para editarla ---
+    function startEdit(id) {
+      const item = bank.find((b) => b.id === id);
+      if (!item) return;
+
+      editingId = id;
+      el.qSubject.value = item.subject || "";
+      el.qText.value = item.question;
+      el.qExplanation.value = item.explanation || "";
+
+      el.optionsContainer.innerHTML = "";
+      item.options.forEach((opt, i) => addOptionRow(i === item.correctIndex, opt));
+
+      if (item.image) {
+        uploadedImage = item.image;
+        el.qImagePreview.src = item.image;
+        el.qImagePreview.style.display = "block";
+        el.qImageRemove.style.display = "block";
+        el.qImageStatus.textContent = "Imagen de la pregunta original.";
+      } else {
+        uploadedImage = null;
+        el.qImagePreview.style.display = "none";
+        el.qImageRemove.style.display = "none";
+        el.qImageStatus.textContent = "";
+      }
+
+      el.addQuestionBtn.textContent = "Guardar cambios";
+      el.cancelEditBtn.style.display = "inline-block";
+      el.formStatus.textContent = "Editando una pregunta del banco.";
+      el.qText.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function cancelEdit() {
+      editingId = null;
+      el.addQuestionBtn.textContent = "Guardar pregunta en el banco";
+      el.cancelEditBtn.style.display = "none";
       el.qText.value = "";
       el.qExplanation.value = "";
       el.qImage.value = "";
@@ -578,9 +647,11 @@ adicional ni bloques de código, con este formato exacto:
       el.qImageRemove.style.display = "none";
       uploadedImage = null;
       resetOptionRows();
-      el.formStatus.textContent = "Pregunta guardada en el banco.";
+    }
 
-      renderBank();
+    el.cancelEditBtn.addEventListener("click", () => {
+      cancelEdit();
+      el.formStatus.textContent = "";
     });
 
     function escapeHtml(str) {
@@ -613,7 +684,10 @@ adicional ni bloques de código, con este formato exacto:
                 ${q.explanation ? " · 📝 con explicación" : ""}
               </div>
             </div>
-            <button type="button" class="bank-card__delete" data-delete="${q.id}">Borrar</button>
+            <div style="display:flex; flex-direction:column; gap:0.4rem;">
+              <button type="button" class="bank-card__delete" data-edit="${q.id}" style="color: var(--sun); border-color: var(--sun);">Editar</button>
+              <button type="button" class="bank-card__delete" data-delete="${q.id}">Borrar</button>
+            </div>
           </div>
         `
             )
@@ -631,9 +705,14 @@ adicional ni bloques de código, con este formato exacto:
         });
       });
 
+      el.bankList.querySelectorAll("[data-edit]").forEach((btn) => {
+        btn.addEventListener("click", () => startEdit(btn.dataset.edit));
+      });
+
       el.bankList.querySelectorAll("[data-delete]").forEach((btn) => {
         btn.addEventListener("click", () => {
           if (!confirm("¿Borrar esta pregunta del banco para siempre?")) return;
+          if (editingId === btn.dataset.delete) cancelEdit();
           bank = bank.filter((b) => b.id !== btn.dataset.delete);
           saveBank();
           renderBank();
