@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v24";
+const APP_JS_VERSION = "v25";
 
 // =======================================================
 // ESTADO
@@ -284,53 +284,34 @@ function compressImage(file, maxWidth = 900, quality = 0.7) {
   });
 }
 
+// Ahora este campo solo acepta fotos (Gemini las analiza directamente).
+// La extracción de texto de PDFs se movió al Constructor de preguntas.
 async function handlePdfUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
 
-  if (file.type.startsWith("image/")) {
-    const apiKey = getApiKey();
-    if (getProvider() !== "gemini" || !apiKey) {
-      el.pdfStatus.textContent =
-        "Para usar fotos, primero elige Gemini como proveedor en Configuración y guarda tu clave.";
-      event.target.value = "";
-      return;
-    }
-
-    el.pdfStatus.textContent = "Cargando imagen…";
-    try {
-      const compressed = await compressImage(file);
-      uploadedImage = compressed;
-      el.topicInput.value = ""; // la imagen reemplaza al texto como fuente
-      el.pdfStatus.textContent = `Imagen cargada: "${file.name}". Gemini la va a analizar directamente al generar las preguntas.`;
-    } catch (err) {
-      el.pdfStatus.textContent = "No se pudo cargar la imagen. Intenta con otra.";
-      console.error(err);
-    }
+  if (!file.type.startsWith("image/")) {
+    el.pdfStatus.textContent = 'Este campo ahora solo acepta fotos. Para usar un PDF, ve al Constructor de preguntas ("Generar con IA").';
+    event.target.value = "";
     return;
   }
 
-  uploadedImage = null;
-  el.pdfStatus.textContent = "Leyendo PDF…";
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const apiKey = getApiKey();
+  if (getProvider() !== "gemini" || !apiKey) {
+    el.pdfStatus.textContent =
+      "Para usar fotos, primero elige Gemini como proveedor en Configuración y guarda tu clave.";
+    event.target.value = "";
+    return;
+  }
 
+  el.pdfStatus.textContent = "Cargando imagen…";
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-
-    let fullText = "";
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const content = await page.getTextContent();
-      const pageText = content.items.map((item) => item.str).join(" ");
-      fullText += pageText + "\n\n";
-    }
-
-    el.topicInput.value = fullText.trim();
-    el.pdfStatus.textContent = `Listo: se extrajeron ${pdf.numPages} página(s) de "${file.name}".`;
+    const compressed = await compressImage(file);
+    uploadedImage = compressed;
+    el.topicInput.value = ""; // la imagen reemplaza al texto como fuente
+    el.pdfStatus.textContent = `Imagen cargada: "${file.name}". Gemini la va a analizar directamente al generar las preguntas.`;
   } catch (err) {
-    el.pdfStatus.textContent = "No se pudo leer el PDF. Intenta con otro archivo.";
+    el.pdfStatus.textContent = "No se pudo cargar la imagen. Intenta con otra.";
     console.error(err);
   }
 }

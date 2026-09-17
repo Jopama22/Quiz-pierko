@@ -11,7 +11,6 @@
 <link rel="icon" href="icon-192.png" />
 <link rel="apple-touch-icon" href="icon-192.png" />
 <link rel="stylesheet" href="style.css?v=9" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -33,9 +32,12 @@
       <h2 class="panel__label">Panel del papá</h2>
 
       <div class="field">
-        <label for="pdfInput">O sube un PDF con preguntas / material de referencia</label>
-        <input type="file" id="pdfInput" accept="application/pdf,image/*" />
+        <label for="pdfInput">O sube una foto de la pregunta (Gemini la analiza directamente)</label>
+        <input type="file" id="pdfInput" accept="image/*" />
         <div id="pdfStatus" class="pdf-status"></div>
+        <div style="font-size: 0.78rem; color: #9BA9C9; margin-top: 0.3rem;">
+          ¿Tienes un PDF con material de referencia? Súbelo en el <a href="constructor.html" style="color: var(--sun);">Constructor de preguntas</a> (sección "Generar con IA").
+        </div>
       </div>
 
       <div class="field">
@@ -91,6 +93,6 @@
     <span id="footerNote">Las claves de API y la conexión en tiempo real se configuran en app.js</span>
   </footer>
 
-  <script src="app.js?v=24"></script>
+  <script src="app.js?v=25"></script>
 </body>
 </html>

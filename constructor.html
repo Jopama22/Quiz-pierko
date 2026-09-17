@@ -11,6 +11,7 @@
 <link rel="icon" href="icon-192.png" />
 <link rel="apple-touch-icon" href="icon-192.png" />
 <link rel="stylesheet" href="style.css?v=9" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 
@@ -32,6 +33,20 @@
       <div class="field">
         <label for="aiTopic">Tema o texto de referencia (opcional)</label>
         <textarea id="aiTopic" placeholder="Ej: la Revolución Francesa, tablas de multiplicar del 7, o pega un párrafo de material..."></textarea>
+      </div>
+
+      <div class="field">
+        <label for="aiPdfInput">O sube un PDF (se extrae el texto y se pone arriba)</label>
+        <input type="file" id="aiPdfInput" accept="application/pdf" />
+        <div id="aiPdfStatus" class="pdf-status"></div>
+      </div>
+
+      <div class="field">
+        <label for="aiImageInput">O sube una foto de la pregunta (Gemini la analiza directamente — requiere Gemini configurado)</label>
+        <input type="file" id="aiImageInput" accept="image/*" />
+        <div id="aiImageStatus" class="pdf-status"></div>
+        <img id="aiImagePreview" class="quiz-image" style="display:none; margin-top:0.6rem; max-height:220px;" alt="Vista previa de la foto" />
+        <button type="button" id="aiImageRemove" class="btn btn--secondary" style="display:none;">Quitar foto</button>
       </div>
 
       <div class="field" style="max-width: 160px;">
@@ -116,9 +131,13 @@
       return callGemini(apiKey, prompt, forceJson);
     }
 
-    async function callGemini(apiKey, prompt, forceJson, attempt = 1) {
+    async function callGemini(apiKey, prompt, forceJson, image, attempt = 1) {
+      const parts = [];
+      if (image) parts.push({ inline_data: { mime_type: image.mimeType, data: image.base64 } });
+      parts.push({ text: prompt });
+
       const body = {
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ parts }],
         generationConfig: { temperature: 1.0 },
       };
       if (forceJson) body.generationConfig.responseMimeType = "application/json";
@@ -130,7 +149,7 @@
       if (!res.ok) {
         if (res.status === 503 && attempt < 3) {
           await sleep(1500 * attempt);
-          return callGemini(apiKey, prompt, forceJson, attempt + 1);
+          return callGemini(apiKey, prompt, forceJson, image, attempt + 1);
         }
         throw new Error(`Error de Gemini (${res.status}): ${await res.text()}`);
       }
@@ -184,8 +203,10 @@
     }
 
     async function generateQuestionsWithAI(apiKey, topic, count) {
-      const temaTexto = topic
-        ? `Tema o material de referencia:\n"""${topic}"""`
+      const MAX_TOPIC_CHARS = 12000;
+      const trimmedTopic = topic.length > MAX_TOPIC_CHARS ? topic.slice(0, MAX_TOPIC_CHARS) : topic;
+      const temaTexto = trimmedTopic
+        ? `Tema o material de referencia:\n"""${trimmedTopic}"""`
         : `No se dio un tema específico: genera preguntas variadas de cultura general apropiadas para un niño (ciencia, animales, geografía, historia, curiosidades).`;
 
       const prompt = `Eres un generador de preguntas educativas de opción múltiple para un niño.
@@ -207,6 +228,33 @@ Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloq
       }
     }
 
+    async function generateQuestionsFromImage(apiKey, image, count) {
+      const prompt = `Eres un generador de preguntas educativas de opción múltiple para un niño.
+Observa la imagen adjunta (puede ser una página de un libro, un examen, una tabla, un gráfico
+o un ejercicio con figuras). La imagen se le va a mostrar tal cual al niño junto con la pregunta,
+así que:
+- En "question" escribe solo el enunciado o la pregunta en sí (sin describir la figura, ya que se ve en la foto).
+- Si la imagen ya muestra alternativas con letras o dibujos (A, B, C, D, E...), en "options" pon
+  SOLO esas letras en orden, por ejemplo ["A", "B", "C", "D", "E"] — no describas los dibujos.
+- Si la imagen no trae alternativas visuales, escribe en "options" el texto normal de 4 alternativas.
+- "correctIndex" es el índice (0 en adelante) de la alternativa correcta.
+Si la imagen tiene varias preguntas distintas, genera hasta ${count} preguntas, una por cada una
+(si solo hay una pregunta en la imagen, genera solo esa).
+
+Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloques de código, con este formato exacto:
+[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
+
+      const raw = await callGemini(apiKey, prompt, true, image);
+      const cleaned = raw.replace(/```json|```/g, "").trim();
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch (e) {
+        throw new Error(`La IA no devolvió un JSON válido: ${cleaned.slice(0, 200)}`);
+      }
+      return parsed.map((q) => ({ ...q, image: image.dataUrl }));
+    }
+
     // Simulación local para cuando no hay ninguna clave de IA configurada
     async function fakeGenerateQuestions(topic, count) {
       await sleep(600);
@@ -222,6 +270,73 @@ Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloq
       return bank;
     }
 
+    function clearAiImage() {
+      aiUploadedImage = null;
+      document.getElementById("aiImageInput").value = "";
+      document.getElementById("aiImageStatus").textContent = "";
+      document.getElementById("aiImagePreview").style.display = "none";
+      document.getElementById("aiImageRemove").style.display = "none";
+    }
+
+    document.getElementById("aiTopic").addEventListener("input", () => {
+      if (aiUploadedImage) clearAiImage();
+    });
+
+    document.getElementById("aiPdfInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const status = document.getElementById("aiPdfStatus");
+      status.textContent = "Leyendo PDF…";
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = "";
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          const content = await page.getTextContent();
+          fullText += content.items.map((item) => item.str).join(" ") + "\n\n";
+        }
+        document.getElementById("aiTopic").value = fullText.trim();
+        if (aiUploadedImage) clearAiImage();
+        status.textContent = `Listo: se extrajeron ${pdf.numPages} página(s) de "${file.name}".`;
+      } catch (err) {
+        status.textContent = "No se pudo leer el PDF. Intenta con otro archivo.";
+        console.error(err);
+      }
+    });
+
+    document.getElementById("aiImageInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const status = document.getElementById("aiImageStatus");
+      const preview = document.getElementById("aiImagePreview");
+      const removeBtn = document.getElementById("aiImageRemove");
+
+      if (getProvider() !== "gemini" || !getApiKey()) {
+        status.textContent = "Para usar fotos, primero elige Gemini como proveedor en ⚙️ Configuración y guarda tu clave.";
+        event.target.value = "";
+        return;
+      }
+
+      status.textContent = "Cargando foto…";
+      try {
+        aiUploadedImage = await compressImageForAI(file);
+        document.getElementById("aiTopic").value = ""; // la foto reemplaza al texto como fuente
+        status.textContent = `Foto cargada: "${file.name}". Gemini la va a analizar directamente.`;
+        preview.src = aiUploadedImage.dataUrl;
+        preview.style.display = "block";
+        removeBtn.style.display = "block";
+      } catch (err) {
+        status.textContent = "No se pudo cargar la foto. Intenta con otra.";
+        aiUploadedImage = null;
+        console.error(err);
+      }
+    });
+
+    document.getElementById("aiImageRemove").addEventListener("click", clearAiImage);
+
     document.getElementById("aiGenerateBtn").addEventListener("click", async () => {
       const btn = document.getElementById("aiGenerateBtn");
       const status = document.getElementById("aiStatus");
@@ -231,13 +346,18 @@ Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloq
       document.getElementById("aiCount").value = count;
 
       btn.disabled = true;
-      status.textContent = `Generando ${count} preguntas…`;
+      status.textContent = aiUploadedImage ? "Analizando la foto…" : `Generando ${count} preguntas…`;
 
       try {
         const apiKey = getApiKey();
-        const generated = apiKey
-          ? await generateQuestionsWithAI(apiKey, topic, count)
-          : await fakeGenerateQuestions(topic, count);
+        let generated;
+        if (aiUploadedImage) {
+          generated = await generateQuestionsFromImage(apiKey, aiUploadedImage, count);
+        } else {
+          generated = apiKey
+            ? await generateQuestionsWithAI(apiKey, topic, count)
+            : await fakeGenerateQuestions(topic, count);
+        }
 
         const subject = el.qSubject.value.trim() || null;
         generated.forEach((q) => {
@@ -246,7 +366,7 @@ Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloq
             question: q.question,
             options: q.options,
             correctIndex: q.correctIndex,
-            image: null,
+            image: q.image || null,
             explanation: null,
             subject,
             selected: true,
@@ -283,7 +403,8 @@ Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloq
       sendSelectedBtn: document.getElementById("sendSelectedBtn"),
     };
 
-    let uploadedImage = null; // dataURL de la imagen ya comprimida
+    let uploadedImage = null; // dataURL de la imagen ya comprimida (pregunta manual)
+    let aiUploadedImage = null; // { base64, mimeType, dataUrl } de la foto para que Gemini la analice
     let bank = [];            // banco permanente: [{ id, question, options, correctIndex, image, explanation, subject, selected }]
 
     // --- Cargar / guardar el banco permanente ---
@@ -343,6 +464,31 @@ Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloq
             const ctx = canvas.getContext("2d");
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             resolve(canvas.toDataURL("image/jpeg", quality));
+          };
+          img.onerror = reject;
+          img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Igual que compressImage, pero devuelve además base64 + mimeType sueltos,
+    // que es lo que necesita Gemini para "ver" la imagen (visión).
+    function compressImageForAI(file, maxWidth = 900, quality = 0.7) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          img.onload = () => {
+            const scale = Math.min(1, maxWidth / img.width);
+            const canvas = document.createElement("canvas");
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL("image/jpeg", quality);
+            resolve({ base64: dataUrl.split(",")[1], mimeType: "image/jpeg", dataUrl });
           };
           img.onerror = reject;
           img.src = e.target.result;
