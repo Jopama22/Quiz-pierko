@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Menú — Preguntas para ti</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#1D2A44" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="stylesheet" href="style.css?v=8" />
+</head>
+<body>
+
+  <header class="topbar">
+    <span class="topbar__mark">●</span>
+    <h1 class="topbar__title">Preguntas para ti</h1>
+    <a href="configuracion.html" class="topbar__settings" title="Configuración">⚙️</a>
+  </header>
+
+  <main style="padding: 2rem 1rem 3rem;">
+
+    <section class="menu-hero">
+      <span class="menu-hero__kicker">Bienvenido de nuevo</span>
+      <h2 class="menu-hero__title">¿Qué quieres hacer hoy?</h2>
+      <p class="menu-hero__sub">Elige una sección para generar preguntas con IA, crearlas a mano, o abrir la vista que usa tu hijo para responder.</p>
+    </section>
+
+    <div class="menu-grid">
+
+      <a href="index.html" class="menu-card menu-card--papa">
+        <span class="menu-card__icon">🧑‍💻</span>
+        <span class="menu-card__tag">Panel del papá</span>
+        <h3 class="menu-card__title">Generar con IA</h3>
+        <p class="menu-card__desc">Sube un PDF o describe un tema y deja que la IA arme el lote de preguntas, tablas y gráficos.</p>
+        <span class="menu-card__cta">Entrar →</span>
+      </a>
+
+      <a href="constructor.html" class="menu-card menu-card--constructor">
+        <span class="menu-card__badge">Nuevo</span>
+        <span class="menu-card__icon">✍️</span>
+        <span class="menu-card__tag">Constructor manual</span>
+        <h3 class="menu-card__title">Crear pregunta a mano</h3>
+        <p class="menu-card__desc">Arma tus propias preguntas de opción múltiple con imagen y explicación, y súmalas al lote.</p>
+        <span class="menu-card__cta">Entrar →</span>
+      </a>
+
+      <a href="hijo.html" class="menu-card menu-card--hijo" id="hijoCard">
+        <span class="menu-card__icon">🧒</span>
+        <span class="menu-card__tag">Vista del hijo</span>
+        <h3 class="menu-card__title">Responder el quiz</h3>
+        <p class="menu-card__desc">La pantalla que ve tu hijo en su propio celular, en tiempo real, con su puntaje y progreso.</p>
+        <span class="menu-card__cta">Entrar →</span>
+      </a>
+
+    </div>
+
+    <div class="menu-status" id="menuStatus">
+      <!-- se llena con JS según el estado real guardado en este navegador -->
+    </div>
+
+    <p style="text-align:center; margin-top: 2rem; font-size: 0.75rem; color: #6C7A9C;">
+      Consejo: fija esta página como acceso directo en tu celular para llegar rápido a cualquier sección.
+    </p>
+  </main>
+
+  <script>
+    // Lee el mismo localStorage que usa index.html (quiz_state) para mostrar
+    // un resumen real del lote y el puntaje, sin necesidad de conectarse a Supabase.
+    function renderStatus() {
+      const box = document.getElementById("menuStatus");
+      let state = null;
+      try {
+        state = JSON.parse(localStorage.getItem("quiz_state") || "null");
+      } catch (e) {}
+
+      const items = [];
+
+      if (state && Array.isArray(state.questionBank) && state.questionBank.length > 0) {
+        const total = state.questionBank.length;
+        const done = Math.max((state.currentIndex ?? -1) + 1, 0);
+        items.push(`<span class="menu-status__item"><span class="dot"></span> Lote: pregunta ${Math.min(done, total)} de ${total}</span>`);
+      } else {
+        items.push(`<span class="menu-status__item"><span class="dot dot--idle"></span> Sin lote activo</span>`);
+      }
+
+      if (state && state.score && state.score.total > 0) {
+        items.push(`<span class="menu-status__item">Puntaje: ${state.score.correct}/${state.score.total}</span>`);
+      }
+
+      box.innerHTML = items.join("");
+    }
+
+    renderStatus();
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  </script>
+</body>
+</html>

@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v22";
+const APP_JS_VERSION = "v23";
 
 // =======================================================
 // ESTADO
@@ -808,12 +808,16 @@ async function showAiReview(item, selectedIndex, isCorrect) {
 
   try {
     const apiKey = getApiKey();
-    const explanation = apiKey
+    // Si la pregunta trae una explicación escrita a mano (constructor manual),
+    // se usa esa directamente y no se le pide nada a la IA.
+    const explanation = item.explanation
+      ? item.explanation
+      : apiKey
       ? await reviewAnswerWithAI(apiKey, item, selectedIndex, isCorrect)
       : await fakeAiReview(item, selectedIndex, isCorrect);
 
     el.answerFeedback.textContent = (isCorrect ? "¡Correcto! 🎉 " : "No era esa. ") + explanation;
-    addTimelineItem("Comentario de la IA", explanation, "review");
+    addTimelineItem(item.explanation ? "Explicación" : "Comentario de la IA", explanation, "review");
   } catch (err) {
     console.error(err);
   }
@@ -897,11 +901,13 @@ async function handleRemoteAnswer(selectedText, isCorrect) {
 
   try {
     const apiKey = getApiKey();
-    const explanation = apiKey
+    const explanation = item.explanation
+      ? item.explanation
+      : apiKey
       ? await reviewAnswerWithAI(apiKey, item, selectedIndex, isCorrect)
       : await fakeAiReview(item, selectedIndex, isCorrect);
 
-    addTimelineItem("Comentario de la IA (en vivo)", explanation, "review");
+    addTimelineItem(item.explanation ? "Explicación (en vivo)" : "Comentario de la IA (en vivo)", explanation, "review");
     const { error } = await supabaseClient.from("quiz_turns").insert({ type: "review", content: explanation });
     if (error) console.error("Error insertando review:", error);
   } catch (err) {
