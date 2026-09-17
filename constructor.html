@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icon-192.png" />
 <link rel="apple-touch-icon" href="icon-192.png" />
-<link rel="stylesheet" href="style.css?v=8" />
+<link rel="stylesheet" href="style.css?v=9" />
 </head>
 <body>
 
@@ -23,6 +23,11 @@
   <main class="layout" style="grid-template-columns: 1fr; max-width: 640px;">
     <section class="panel">
       <a href="menu.html" class="back-link">← Volver al menú</a>
+
+      <div class="field">
+        <label for="qSubject">Materia (opcional)</label>
+        <input type="text" id="qSubject" placeholder="Ej: Mate, Lenguaje, Historia..." />
+      </div>
 
       <div class="field">
         <label for="qText">Enunciado de la pregunta</label>
@@ -46,19 +51,25 @@
         <textarea id="qExplanation" placeholder="Ej: La primera elipsis indica una consecuencia ('por eso')..."></textarea>
       </div>
 
-      <button id="addQuestionBtn" class="btn btn--primary">Agregar pregunta a la lista</button>
+      <button id="addQuestionBtn" class="btn btn--primary">Guardar pregunta en el banco</button>
       <div id="formStatus" class="pdf-status"></div>
     </section>
 
     <section class="panel">
-      <h2 class="panel__label">Preguntas listas para enviar (<span id="pendingCount">0</span>)</h2>
-      <div id="pendingList"></div>
-      <button id="saveAllBtn" class="btn btn--primary" disabled>Guardar en el lote y volver al panel del papá</button>
+      <h2 class="panel__label">Banco de preguntas guardadas (<span id="bankCount">0</span>)</h2>
+      <p style="font-size:0.82rem; color:#9BA9C9; margin-top:-0.4rem;">
+        Quedan guardadas para siempre (aunque reinicies el quiz). Marca las que quieras mandar ahora — se envían en orden aleatorio.
+      </p>
+      <div id="bankList"></div>
+      <button id="sendSelectedBtn" class="btn btn--primary" disabled>Enviar seleccionadas al panel del papá (aleatorio)</button>
     </section>
   </main>
 
   <script>
+    const BANK_KEY = "manual_question_bank";
+
     const el = {
+      qSubject: document.getElementById("qSubject"),
       qText: document.getElementById("qText"),
       qImage: document.getElementById("qImage"),
       qImageStatus: document.getElementById("qImageStatus"),
@@ -67,13 +78,26 @@
       qExplanation: document.getElementById("qExplanation"),
       addQuestionBtn: document.getElementById("addQuestionBtn"),
       formStatus: document.getElementById("formStatus"),
-      pendingCount: document.getElementById("pendingCount"),
-      pendingList: document.getElementById("pendingList"),
-      saveAllBtn: document.getElementById("saveAllBtn"),
+      bankCount: document.getElementById("bankCount"),
+      bankList: document.getElementById("bankList"),
+      sendSelectedBtn: document.getElementById("sendSelectedBtn"),
     };
 
     let uploadedImage = null; // dataURL de la imagen ya comprimida
-    let pendingQuestions = []; // preguntas armadas en esta sesión, listas para guardar
+    let bank = [];            // banco permanente: [{ id, question, options, correctIndex, image, explanation, subject, selected }]
+
+    // --- Cargar / guardar el banco permanente ---
+    function loadBank() {
+      try {
+        bank = JSON.parse(localStorage.getItem(BANK_KEY) || "[]");
+      } catch (e) {
+        bank = [];
+      }
+    }
+
+    function saveBank() {
+      localStorage.setItem(BANK_KEY, JSON.stringify(bank));
+    }
 
     // --- Alternativas dinámicas (arranca con 4, mínimo 2, máximo 6) ---
     function addOptionRow(checked = false) {
@@ -94,11 +118,16 @@
       el.optionsContainer.appendChild(row);
     }
 
+    function resetOptionRows() {
+      el.optionsContainer.innerHTML = "";
+      addOptionRow(true);
+      addOptionRow(false);
+      addOptionRow(false);
+      addOptionRow(false);
+    }
+
     el.addOptionBtn.addEventListener("click", () => addOptionRow(false));
-    addOptionRow(true);
-    addOptionRow(false);
-    addOptionRow(false);
-    addOptionRow(false);
+    resetOptionRows();
 
     // --- Imagen: se comprime igual que en app.js, para no pesar demasiado ---
     function compressImage(file, maxWidth = 900, quality = 0.7) {
@@ -136,7 +165,7 @@
       }
     });
 
-    // --- Agregar la pregunta armada a la lista pendiente ---
+    // --- Guardar la pregunta armada en el banco permanente ---
     el.addQuestionBtn.addEventListener("click", () => {
       const question = el.qText.value.trim();
       if (!question) {
@@ -157,61 +186,29 @@
         return;
       }
 
-      const explanation = el.qExplanation.value.trim();
-
-      pendingQuestions.push({
+      bank.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         question,
         options,
         correctIndex: correctRow,
         image: uploadedImage || null,
-        explanation: explanation || null,
+        explanation: el.qExplanation.value.trim() || null,
+        subject: el.qSubject.value.trim() || null,
+        selected: true, // recién creada: queda marcada para el próximo envío
       });
+      saveBank();
 
-      // Reset del formulario para la siguiente pregunta
+      // Reset del formulario para la siguiente pregunta (la materia se mantiene, suele repetirse)
       el.qText.value = "";
       el.qExplanation.value = "";
       el.qImage.value = "";
       el.qImageStatus.textContent = "";
       uploadedImage = null;
-      el.optionsContainer.innerHTML = "";
-      addOptionRow(true);
-      addOptionRow(false);
-      addOptionRow(false);
-      addOptionRow(false);
-      el.formStatus.textContent = "Pregunta agregada a la lista de abajo.";
+      resetOptionRows();
+      el.formStatus.textContent = "Pregunta guardada en el banco.";
 
-      renderPendingList();
+      renderBank();
     });
-
-    function renderPendingList() {
-      el.pendingCount.textContent = pendingQuestions.length;
-      el.saveAllBtn.disabled = pendingQuestions.length === 0;
-
-      el.pendingList.innerHTML = pendingQuestions
-        .map((q, i) => `
-          <div class="question-preview-card">
-            <div class="question-preview-card__top">
-              <div>
-                <strong>${i + 1}.</strong> ${escapeHtml(q.question)}
-                <div style="color:#9BA9C9; margin-top:0.3rem;">
-                  Correcta: ${escapeHtml(q.options[q.correctIndex])}
-                  ${q.image ? " · 🖼️ con imagen" : ""}
-                  ${q.explanation ? " · 📝 con explicación" : ""}
-                </div>
-              </div>
-              <button type="button" class="question-preview-card__remove" data-index="${i}">Quitar</button>
-            </div>
-          </div>
-        `)
-        .join("") || `<p style="color:#9BA9C9; font-size:0.85rem;">Todavía no agregaste ninguna pregunta.</p>`;
-
-      el.pendingList.querySelectorAll(".question-preview-card__remove").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          pendingQuestions.splice(Number(btn.dataset.index), 1);
-          renderPendingList();
-        });
-      });
-    }
 
     function escapeHtml(str) {
       const div = document.createElement("div");
@@ -219,9 +216,73 @@
       return div.innerHTML;
     }
 
-    // --- Guardar todo en el mismo localStorage que usa index.html (quiz_state) ---
-    el.saveAllBtn.addEventListener("click", () => {
-      if (pendingQuestions.length === 0) return;
+    function renderBank() {
+      el.bankCount.textContent = bank.length;
+      const selectedCount = bank.filter((q) => q.selected).length;
+      el.sendSelectedBtn.disabled = selectedCount === 0;
+      el.sendSelectedBtn.textContent =
+        selectedCount > 0
+          ? `Enviar ${selectedCount} seleccionada(s) al panel del papá (aleatorio)`
+          : "Enviar seleccionadas al panel del papá (aleatorio)";
+
+      el.bankList.innerHTML = bank.length
+        ? bank
+            .map(
+              (q) => `
+          <div class="bank-card">
+            <input type="checkbox" data-id="${q.id}" ${q.selected ? "checked" : ""} />
+            <div class="bank-card__body">
+              ${q.subject ? `<span class="question-meta__subject">${escapeHtml(q.subject)}</span> ` : ""}
+              ${escapeHtml(q.question)}
+              <div class="bank-card__meta">
+                Correcta: ${escapeHtml(q.options[q.correctIndex])}
+                ${q.image ? " · 🖼️ con imagen" : ""}
+                ${q.explanation ? " · 📝 con explicación" : ""}
+              </div>
+            </div>
+            <button type="button" class="bank-card__delete" data-delete="${q.id}">Borrar</button>
+          </div>
+        `
+            )
+            .join("")
+        : `<p style="color:#9BA9C9; font-size:0.85rem;">Todavía no guardaste ninguna pregunta.</p>`;
+
+      el.bankList.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+        cb.addEventListener("change", () => {
+          const q = bank.find((b) => b.id === cb.dataset.id);
+          if (q) {
+            q.selected = cb.checked;
+            saveBank();
+            renderBank();
+          }
+        });
+      });
+
+      el.bankList.querySelectorAll("[data-delete]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (!confirm("¿Borrar esta pregunta del banco para siempre?")) return;
+          bank = bank.filter((b) => b.id !== btn.dataset.delete);
+          saveBank();
+          renderBank();
+        });
+      });
+    }
+
+    function shuffle(arr) {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    // --- Enviar las seleccionadas (mezcladas) al lote del papá, sin borrarlas del banco ---
+    el.sendSelectedBtn.addEventListener("click", () => {
+      const selected = bank.filter((q) => q.selected);
+      if (selected.length === 0) return;
+
+      const toSend = shuffle(selected).map(({ id, selected, ...q }) => q);
 
       let state = { questionBank: [], currentIndex: -1, score: { correct: 0, total: 0 } };
       try {
@@ -229,13 +290,18 @@
         if (saved) state = saved;
       } catch (e) {}
 
-      state.questionBank = (state.questionBank || []).concat(pendingQuestions);
+      state.questionBank = (state.questionBank || []).concat(toSend);
       localStorage.setItem("quiz_state", JSON.stringify(state));
+
+      // Se desmarcan (quedan guardadas en el banco, pero hay que elegirlas de nuevo la próxima vez)
+      bank.forEach((q) => (q.selected = false));
+      saveBank();
 
       window.location.href = "index.html";
     });
 
-    renderPendingList();
+    loadBank();
+    renderBank();
   </script>
 </body>
 </html>

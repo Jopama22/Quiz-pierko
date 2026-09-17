@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v23";
+const APP_JS_VERSION = "v24";
 
 // =======================================================
 // ESTADO
@@ -664,6 +664,8 @@ async function handleSendNextQuestion() {
   }
 
   const item = questionBank[currentIndex];
+  item.questionNumber = currentIndex + 1;
+  item.questionTotal = questionBank.length;
   el.batchStatus.textContent = `Pregunta ${currentIndex + 1} de ${questionBank.length} enviada.`;
   addTimelineItem("Pregunta enviada", item.question, "question");
 
@@ -679,6 +681,9 @@ async function handleSendNextQuestion() {
     table_data: item.table || null,
     chart_data: item.chart || null,
     image_data: item.image || null,
+    subject: item.subject || null,
+    question_number: item.questionNumber,
+    question_total: item.questionTotal,
   });
   if (error) {
     el.batchStatus.textContent = `Error al enviar a Supabase: ${error.message}`;
@@ -714,6 +719,12 @@ function escapeHtml(str) {
 
 function renderQuestionHTML(item) {
   let html = "";
+  if (item.subject || item.questionNumber) {
+    html += `<div class="question-meta">`;
+    html += item.subject ? `<span class="question-meta__subject">${escapeHtml(item.subject)}</span>` : `<span></span>`;
+    html += item.questionNumber ? `<span class="question-meta__counter">${item.questionNumber}/${item.questionTotal}</span>` : "";
+    html += `</div>`;
+  }
   if (item.image) {
     html += `<img src="${item.image}" alt="Imagen de la pregunta" class="quiz-image" />`;
   }
