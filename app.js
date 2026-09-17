@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v26";
+const APP_JS_VERSION = "v28";
 
 // =======================================================
 // ESTADO
@@ -297,9 +297,10 @@ async function handlePdfUpload(event) {
   }
 
   const apiKey = getApiKey();
-  if (getProvider() !== "gemini" || !apiKey) {
+  const provider = getProvider();
+  if ((provider !== "gemini" && provider !== "groq") || !apiKey) {
     el.pdfStatus.textContent =
-      "Para usar fotos, primero elige Gemini como proveedor en Configuración y guarda tu clave.";
+      "Para usar fotos, primero elige Gemini o Groq como proveedor en Configuración y guarda tu clave.";
     event.target.value = "";
     return;
   }
@@ -309,7 +310,7 @@ async function handlePdfUpload(event) {
     const compressed = await compressImage(file);
     uploadedImage = compressed;
     el.topicInput.value = ""; // la imagen reemplaza al texto como fuente
-    el.pdfStatus.textContent = `Imagen cargada: "${file.name}". Gemini la va a analizar directamente al generar las preguntas.`;
+    el.pdfStatus.textContent = `Imagen cargada: "${file.name}". Se va a analizar directamente al generar las preguntas.`;
   } catch (err) {
     el.pdfStatus.textContent = "No se pudo cargar la imagen. Intenta con otra.";
     console.error(err);
@@ -391,10 +392,13 @@ async function callGemini(apiKey, prompt, forceJson, image, attempt = 1) {
   );
 
   if (!res.ok) {
-    // Si el modelo está saturado (503), reintenta una vez después de una pausa breve
-    if (res.status === 503 && attempt < 3) {
-      await sleep(1500 * attempt);
+    // Si el modelo está saturado (503), reintenta varias veces con pausas crecientes
+    if (res.status === 503 && attempt < 5) {
+      await sleep(Math.min(2000 * attempt, 8000));
       return callGemini(apiKey, prompt, forceJson, image, attempt + 1);
+    }
+    if (res.status === 503) {
+      throw new Error("Gemini está saturado en este momento (mucha demanda). Espera un minuto y volvé a intentar.");
     }
     const errText = await res.text();
     throw new Error(`Error de Gemini (${res.status}): ${errText}`);
@@ -452,8 +456,9 @@ async function callOllama(apiKey, prompt, forceJson, attempt = 1) {
 // Groq usa formato tipo OpenAI (mensajes de chat) y también bloquea CORS
 // directo desde el navegador, así que también pasa por un proxy propio.
 const GROQ_MODEL = "openai/gpt-oss-120b";
+const GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"; // el que sabe "ver" imágenes
 
-async function callGroq(apiKey, prompt, forceJson, attempt = 1) {
+async function callGroq(apiKey, prompt, forceJson, image, attempt = 1) {
   const proxyUrl = localStorage.getItem("proxy_url_groq");
   if (!proxyUrl) {
     throw new Error(
@@ -461,9 +466,16 @@ async function callGroq(apiKey, prompt, forceJson, attempt = 1) {
     );
   }
 
+  const content = image
+    ? [
+        { type: "text", text: prompt },
+        { type: "image_url", image_url: { url: image.dataUrl } },
+      ]
+    : prompt;
+
   const body = {
-    model: GROQ_MODEL,
-    messages: [{ role: "user", content: prompt }],
+    model: image ? GROQ_VISION_MODEL : GROQ_MODEL,
+    messages: [{ role: "user", content }],
     temperature: 1.0,
   };
   if (forceJson) {
@@ -482,7 +494,7 @@ async function callGroq(apiKey, prompt, forceJson, attempt = 1) {
   if (!res.ok) {
     if (res.status === 503 && attempt < 3) {
       await sleep(1500 * attempt);
-      return callGroq(apiKey, prompt, forceJson, attempt + 1);
+      return callGroq(apiKey, prompt, forceJson, image, attempt + 1);
     }
     const errText = await res.text();
     throw new Error(`Error de Groq (${res.status}): ${errText}`);
@@ -565,7 +577,11 @@ Si la imagen tiene varias preguntas distintas, genera hasta ${count} preguntas, 
 Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloques de código, con este formato exacto:
 [{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
 
-  const raw = await callGemini(apiKey, prompt, true, image);
+  const provider = getProvider();
+  const raw =
+    provider === "groq"
+      ? await callGroq(apiKey, prompt, true, image)
+      : await callGemini(apiKey, prompt, true, image);
   const cleaned = raw.replace(/```json|```/g, "").trim();
   let parsed;
   try {

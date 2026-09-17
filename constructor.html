@@ -42,7 +42,7 @@
       </div>
 
       <div class="field">
-        <label for="aiImageInput">O sube una foto de la pregunta (Gemini la analiza directamente — requiere Gemini configurado)</label>
+        <label for="aiImageInput">O sube una foto de la pregunta (Gemini o Groq la analizan directamente)</label>
         <input type="file" id="aiImageInput" accept="image/*" />
         <div id="aiImageStatus" class="pdf-status"></div>
         <img id="aiImagePreview" class="quiz-image" style="display:none; margin-top:0.6rem; max-height:220px;" alt="Vista previa de la foto" />
@@ -124,6 +124,7 @@
     const GEMINI_MODEL = "gemini-3.6-flash";
     const OLLAMA_MODEL = "gpt-oss:120b";
     const GROQ_MODEL = "openai/gpt-oss-120b";
+    const GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"; // el que sabe "ver" imágenes
 
     async function callAI(apiKey, prompt, forceJson) {
       const provider = getProvider();
@@ -148,9 +149,12 @@
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
       );
       if (!res.ok) {
-        if (res.status === 503 && attempt < 3) {
-          await sleep(1500 * attempt);
+        if (res.status === 503 && attempt < 5) {
+          await sleep(Math.min(2000 * attempt, 8000));
           return callGemini(apiKey, prompt, forceJson, image, attempt + 1);
+        }
+        if (res.status === 503) {
+          throw new Error("Gemini está saturado en este momento (mucha demanda). Espera un minuto y volvé a tocar 'Generar con IA'.");
         }
         throw new Error(`Error de Gemini (${res.status}): ${await res.text()}`);
       }
@@ -180,10 +184,16 @@
       return data.response;
     }
 
-    async function callGroq(apiKey, prompt, forceJson, attempt = 1) {
+    async function callGroq(apiKey, prompt, forceJson, image, attempt = 1) {
       const proxyUrl = localStorage.getItem("proxy_url_groq");
       if (!proxyUrl) throw new Error("Falta configurar la URL de tu proxy de Groq en Configuración.");
-      const body = { model: GROQ_MODEL, messages: [{ role: "user", content: prompt }], temperature: 1.0 };
+      const content = image
+        ? [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: image.dataUrl } },
+          ]
+        : prompt;
+      const body = { model: image ? GROQ_VISION_MODEL : GROQ_MODEL, messages: [{ role: "user", content }], temperature: 1.0 };
       if (forceJson) body.response_format = { type: "json_object" };
       const res = await fetch(proxyUrl, {
         method: "POST",
@@ -193,7 +203,7 @@
       if (!res.ok) {
         if (res.status === 503 && attempt < 3) {
           await sleep(1500 * attempt);
-          return callGroq(apiKey, prompt, forceJson, attempt + 1);
+          return callGroq(apiKey, prompt, forceJson, image, attempt + 1);
         }
         throw new Error(`Error de Groq (${res.status}): ${await res.text()}`);
       }
@@ -257,7 +267,10 @@ Responde ÚNICAMENTE con un JSON válido (un array, incluso si es una sola pregu
 adicional ni bloques de código, con este formato exacto:
 [{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
 
-      const raw = await callGemini(apiKey, prompt, true, image);
+      const raw =
+        getProvider() === "groq"
+          ? await callGroq(apiKey, prompt, true, image)
+          : await callGemini(apiKey, prompt, true, image);
       const cleaned = raw.replace(/```json|```/g, "").trim();
       let parsed;
       try {
@@ -327,8 +340,9 @@ adicional ni bloques de código, con este formato exacto:
       const preview = document.getElementById("aiImagePreview");
       const removeBtn = document.getElementById("aiImageRemove");
 
-      if (getProvider() !== "gemini" || !getApiKey()) {
-        status.textContent = "Para usar fotos, primero elige Gemini como proveedor en ⚙️ Configuración y guarda tu clave.";
+      const provider = getProvider();
+      if ((provider !== "gemini" && provider !== "groq") || !getApiKey()) {
+        status.textContent = "Para usar fotos, primero elige Gemini o Groq como proveedor en ⚙️ Configuración y guarda tu clave.";
         event.target.value = "";
         return;
       }
@@ -337,7 +351,7 @@ adicional ni bloques de código, con este formato exacto:
       try {
         aiUploadedImage = await compressImageForAI(file);
         document.getElementById("aiTopic").value = ""; // la foto reemplaza al texto como fuente
-        status.textContent = `Foto cargada: "${file.name}". Gemini la va a analizar directamente.`;
+        status.textContent = `Foto cargada: "${file.name}". Se va a analizar directamente.`;
         preview.src = aiUploadedImage.dataUrl;
         preview.style.display = "block";
         removeBtn.style.display = "block";
