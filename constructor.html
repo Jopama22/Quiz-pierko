@@ -18,11 +18,33 @@
     <a href="menu.html" class="topbar__settings" title="Menú principal">🏠</a>
     <span class="topbar__mark">●</span>
     <h1 class="topbar__title">Constructor de preguntas</h1>
+    <a href="configuracion.html" class="topbar__settings" title="Configuración">⚙️</a>
   </header>
 
   <main class="layout" style="grid-template-columns: 1fr; max-width: 640px;">
     <section class="panel">
       <a href="menu.html" class="back-link">← Volver al menú</a>
+      <h2 class="panel__label">Generar con IA</h2>
+      <p style="font-size:0.82rem; color:#9BA9C9; margin-top:-0.6rem;">
+        Usa el mismo proveedor y clave que configuraste en ⚙️ Configuración. Las preguntas generadas caen directo al banco de abajo, ya seleccionadas.
+      </p>
+
+      <div class="field">
+        <label for="aiTopic">Tema o texto de referencia (opcional)</label>
+        <textarea id="aiTopic" placeholder="Ej: la Revolución Francesa, tablas de multiplicar del 7, o pega un párrafo de material..."></textarea>
+      </div>
+
+      <div class="field" style="max-width: 160px;">
+        <label for="aiCount">Cuántas preguntas</label>
+        <input type="number" id="aiCount" value="5" min="1" max="20" />
+      </div>
+
+      <button id="aiGenerateBtn" class="btn btn--primary">✨ Generar con IA</button>
+      <div id="aiStatus" class="pdf-status"></div>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel__label">Crear una a mano</h2>
 
       <div class="field">
         <label for="qSubject">Materia (opcional)</label>
@@ -69,6 +91,180 @@
 
   <script>
     const BANK_KEY = "manual_question_bank";
+
+    // =======================================================
+    // GENERAR CON IA (mismo proveedor/clave que configuracion.html guarda)
+    // =======================================================
+    function getProvider() {
+      return localStorage.getItem("ai_provider") || "gemini";
+    }
+    function getApiKey() {
+      return localStorage.getItem(`api_key_${getProvider()}`) || null;
+    }
+    function sleep(ms) {
+      return new Promise((r) => setTimeout(r, ms));
+    }
+
+    const GEMINI_MODEL = "gemini-3.6-flash";
+    const OLLAMA_MODEL = "gpt-oss:120b";
+    const GROQ_MODEL = "openai/gpt-oss-120b";
+
+    async function callAI(apiKey, prompt, forceJson) {
+      const provider = getProvider();
+      if (provider === "ollama") return callOllama(apiKey, prompt, forceJson);
+      if (provider === "groq") return callGroq(apiKey, prompt, forceJson);
+      return callGemini(apiKey, prompt, forceJson);
+    }
+
+    async function callGemini(apiKey, prompt, forceJson, attempt = 1) {
+      const body = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 1.0 },
+      };
+      if (forceJson) body.generationConfig.responseMimeType = "application/json";
+
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      );
+      if (!res.ok) {
+        if (res.status === 503 && attempt < 3) {
+          await sleep(1500 * attempt);
+          return callGemini(apiKey, prompt, forceJson, attempt + 1);
+        }
+        throw new Error(`Error de Gemini (${res.status}): ${await res.text()}`);
+      }
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error(`Gemini no devolvió texto: ${JSON.stringify(data)}`);
+      return text;
+    }
+
+    async function callOllama(apiKey, prompt, forceJson, attempt = 1) {
+      const proxyUrl = localStorage.getItem("proxy_url_ollama");
+      if (!proxyUrl) throw new Error("Falta configurar la URL de tu proxy de Ollama en Configuración.");
+      const res = await fetch(proxyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false, format: forceJson ? "json" : undefined, options: { temperature: 1.0 } }),
+      });
+      if (!res.ok) {
+        if (res.status === 503 && attempt < 3) {
+          await sleep(1500 * attempt);
+          return callOllama(apiKey, prompt, forceJson, attempt + 1);
+        }
+        throw new Error(`Error de Ollama (${res.status}): ${await res.text()}`);
+      }
+      const data = await res.json();
+      if (!data.response) throw new Error(`Ollama no devolvió texto: ${JSON.stringify(data)}`);
+      return data.response;
+    }
+
+    async function callGroq(apiKey, prompt, forceJson, attempt = 1) {
+      const proxyUrl = localStorage.getItem("proxy_url_groq");
+      if (!proxyUrl) throw new Error("Falta configurar la URL de tu proxy de Groq en Configuración.");
+      const body = { model: GROQ_MODEL, messages: [{ role: "user", content: prompt }], temperature: 1.0 };
+      if (forceJson) body.response_format = { type: "json_object" };
+      const res = await fetch(proxyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        if (res.status === 503 && attempt < 3) {
+          await sleep(1500 * attempt);
+          return callGroq(apiKey, prompt, forceJson, attempt + 1);
+        }
+        throw new Error(`Error de Groq (${res.status}): ${await res.text()}`);
+      }
+      const data = await res.json();
+      const text = data.choices?.[0]?.message?.content;
+      if (!text) throw new Error(`Groq no devolvió texto: ${JSON.stringify(data)}`);
+      return text;
+    }
+
+    async function generateQuestionsWithAI(apiKey, topic, count) {
+      const temaTexto = topic
+        ? `Tema o material de referencia:\n"""${topic}"""`
+        : `No se dio un tema específico: genera preguntas variadas de cultura general apropiadas para un niño (ciencia, animales, geografía, historia, curiosidades).`;
+
+      const prompt = `Eres un generador de preguntas educativas de opción múltiple para un niño.
+Genera exactamente ${count} preguntas. Cada pregunta debe tener 4 alternativas y un
+"correctIndex" (0 a 3) indicando cuál es la correcta.
+Varía el enfoque y la redacción de las preguntas — evita repetir siempre las mismas preguntas obvias sobre el tema.
+
+${temaTexto}
+
+Responde ÚNICAMENTE con un JSON válido (un array), sin texto adicional ni bloques de código, con este formato exacto:
+[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
+
+      const raw = await callAI(apiKey, prompt, true);
+      const cleaned = raw.replace(/```json|```/g, "").trim();
+      try {
+        return JSON.parse(cleaned);
+      } catch (e) {
+        throw new Error(`La IA no devolvió un JSON válido: ${cleaned.slice(0, 200)}`);
+      }
+    }
+
+    // Simulación local para cuando no hay ninguna clave de IA configurada
+    async function fakeGenerateQuestions(topic, count) {
+      await sleep(600);
+      const label = topic || "cultura general";
+      const bank = [];
+      for (let i = 1; i <= count; i++) {
+        const correctIndex = Math.floor(Math.random() * 4);
+        const options = [0, 1, 2, 3].map((n) =>
+          n === correctIndex ? `Opción correcta sobre "${label}" (#${i})` : `Opción distractora ${n + 1} (#${i})`
+        );
+        bank.push({ question: `Pregunta ${i} sobre "${label}": ¿cuál de estas opciones es correcta?`, options, correctIndex });
+      }
+      return bank;
+    }
+
+    document.getElementById("aiGenerateBtn").addEventListener("click", async () => {
+      const btn = document.getElementById("aiGenerateBtn");
+      const status = document.getElementById("aiStatus");
+      const topic = document.getElementById("aiTopic").value.trim();
+      let count = parseInt(document.getElementById("aiCount").value, 10) || 5;
+      count = Math.min(Math.max(count, 1), 20);
+      document.getElementById("aiCount").value = count;
+
+      btn.disabled = true;
+      status.textContent = `Generando ${count} preguntas…`;
+
+      try {
+        const apiKey = getApiKey();
+        const generated = apiKey
+          ? await generateQuestionsWithAI(apiKey, topic, count)
+          : await fakeGenerateQuestions(topic, count);
+
+        const subject = el.qSubject.value.trim() || null;
+        generated.forEach((q) => {
+          bank.push({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            question: q.question,
+            options: q.options,
+            correctIndex: q.correctIndex,
+            image: null,
+            explanation: null,
+            subject,
+            selected: true,
+          });
+        });
+        saveBank();
+        renderBank();
+        status.textContent = apiKey
+          ? `${generated.length} preguntas generadas y agregadas al banco (ya seleccionadas).`
+          : `${generated.length} preguntas de ejemplo agregadas (modo demo — configura tu clave en ⚙️ para preguntas reales).`;
+      } catch (err) {
+        status.textContent = `Error: ${err.message}`;
+        console.error(err);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
 
     const el = {
       qSubject: document.getElementById("qSubject"),
