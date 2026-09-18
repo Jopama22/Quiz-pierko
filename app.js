@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v29";
+const APP_JS_VERSION = "v31";
 
 // =======================================================
 // ESTADO
@@ -456,7 +456,7 @@ async function callOllama(apiKey, prompt, forceJson, attempt = 1) {
 // Groq usa formato tipo OpenAI (mensajes de chat) y también bloquea CORS
 // directo desde el navegador, así que también pasa por un proxy propio.
 const GROQ_MODEL = "openai/gpt-oss-120b";
-const GROQ_VISION_MODEL = "qwen/qwen3.6-27b"; // el que sabe "ver" imágenes (reemplazo de llama-4-scout, retirado por Groq el 17/07/26)
+const GROQ_VISION_MODEL = "qwen/qwen3.8-27b"; // el que sabe "ver" imágenes (Groq va rotando este modelo seguido)
 
 async function callGroq(apiKey, prompt, forceJson, image, attempt = 1) {
   const proxyUrl = localStorage.getItem("proxy_url_groq");
@@ -497,6 +497,11 @@ async function callGroq(apiKey, prompt, forceJson, image, attempt = 1) {
       return callGroq(apiKey, prompt, forceJson, image, attempt + 1);
     }
     const errText = await res.text();
+    if (image && res.status === 404 && errText.includes("model_not_found")) {
+      throw new Error(
+        `Tu cuenta de Groq todavía no tiene acceso al modelo de visión (${GROQ_VISION_MODEL}). Entrá a console.groq.com/playground, probá ese modelo con una imagen ahí una vez, y volvé a intentar. Mientras tanto podés usar Gemini para fotos.`
+      );
+    }
     throw new Error(`Error de Groq (${res.status}): ${errText}`);
   }
 
