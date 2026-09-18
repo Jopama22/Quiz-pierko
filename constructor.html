@@ -124,7 +124,7 @@
     const GEMINI_MODEL = "gemini-3.6-flash";
     const OLLAMA_MODEL = "gpt-oss:120b";
     const GROQ_MODEL = "openai/gpt-oss-120b";
-    const GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"; // el que sabe "ver" imágenes
+    const GROQ_VISION_MODEL = "qwen/qwen3.6-27b"; // el que sabe "ver" imágenes (reemplazo de llama-4-scout, retirado por Groq el 17/07/26)
 
     async function callAI(apiKey, prompt, forceJson) {
       const provider = getProvider();

@@ -1,7 +1,7 @@
 // Service worker mínimo — permite que el navegador ofrezca "Agregar a
 // pantalla de inicio" / "Instalar app" y que la app abra como app real
 // (sin barra de direcciones) en vez de como una pestaña de navegador.
-const CACHE_NAME = "quiz-hijo-v1";
+const CACHE_NAME = "quiz-hijo-v2";
 const FILES_TO_CACHE = ["index.html", "configuracion.html", "hijo.html", "style.css"];
 
 self.addEventListener("install", (event) => {
@@ -15,10 +15,11 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-// Estrategia simple: intenta la red primero (para tener siempre lo último),
-// y si falla (sin internet), usa la copia guardada.
+// Estrategia simple: intenta la red primero, forzando que sea siempre una
+// copia fresca (sin usar la caché HTTP del navegador), para que los cambios
+// que subís a GitHub se vean enseguida. Si no hay internet, usa la copia guardada.
 self.addEventListener("fetch", (event) => {
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request, { cache: "no-store" }).catch(() => caches.match(event.request))
   );
 });

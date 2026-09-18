@@ -11,7 +11,7 @@ const CONFIG = {
 // =======================================================
 // VERSIÓN DEL SCRIPT (para verificar que el navegador cargó lo último)
 // =======================================================
-const APP_JS_VERSION = "v28";
+const APP_JS_VERSION = "v29";
 
 // =======================================================
 // ESTADO
@@ -456,7 +456,7 @@ async function callOllama(apiKey, prompt, forceJson, attempt = 1) {
 // Groq usa formato tipo OpenAI (mensajes de chat) y también bloquea CORS
 // directo desde el navegador, así que también pasa por un proxy propio.
 const GROQ_MODEL = "openai/gpt-oss-120b";
-const GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"; // el que sabe "ver" imágenes
+const GROQ_VISION_MODEL = "qwen/qwen3.6-27b"; // el que sabe "ver" imágenes (reemplazo de llama-4-scout, retirado por Groq el 17/07/26)
 
 async function callGroq(apiKey, prompt, forceJson, image, attempt = 1) {
   const proxyUrl = localStorage.getItem("proxy_url_groq");
