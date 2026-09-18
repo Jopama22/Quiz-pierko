@@ -238,14 +238,16 @@
 
       const prompt = `Eres un generador de preguntas educativas de opción múltiple para un niño.
 Genera exactamente ${count} preguntas. Cada pregunta debe tener 4 alternativas y un
-"correctIndex" (0 a 3) indicando cuál es la correcta.
+"correctIndex" (0 a 3) indicando cuál es la correcta. Agrega también una "explanation":
+1-2 frases simples explicando por qué esa es la respuesta correcta (se le muestra al niño
+apenas responde, así que tiene que ser clara y breve).
 Varía el enfoque y la redacción de las preguntas — evita repetir siempre las mismas preguntas obvias sobre el tema.
 
 ${temaTexto}
 
 Responde ÚNICAMENTE con un JSON válido (un array, incluso si es una sola pregunta), sin texto
 adicional ni bloques de código, con este formato exacto:
-[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
+[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0, "explanation": "..."}]`;
 
       const raw = await callAI(apiKey, prompt, true);
       const cleaned = raw.replace(/```json|```/g, "").trim();
@@ -266,12 +268,14 @@ así que:
   SOLO esas letras en orden, por ejemplo ["A", "B", "C", "D", "E"] — no describas los dibujos.
 - Si la imagen no trae alternativas visuales, escribe en "options" el texto normal de 4 alternativas.
 - "correctIndex" es el índice (0 en adelante) de la alternativa correcta.
+- Agrega "explanation": 1-2 frases simples explicando por qué esa es la respuesta correcta
+  (se le muestra al niño apenas responde).
 Si la imagen tiene varias preguntas distintas, genera hasta ${count} preguntas, una por cada una
 (si solo hay una pregunta en la imagen, genera solo esa).
 
 Responde ÚNICAMENTE con un JSON válido (un array, incluso si es una sola pregunta), sin texto
 adicional ni bloques de código, con este formato exacto:
-[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0}]`;
+[{"question": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0, "explanation": "..."}]`;
 
       const raw =
         getProvider() === "groq"
@@ -297,7 +301,12 @@ adicional ni bloques de código, con este formato exacto:
         const options = [0, 1, 2, 3].map((n) =>
           n === correctIndex ? `Opción correcta sobre "${label}" (#${i})` : `Opción distractora ${n + 1} (#${i})`
         );
-        bank.push({ question: `Pregunta ${i} sobre "${label}": ¿cuál de estas opciones es correcta?`, options, correctIndex });
+        bank.push({
+          question: `Pregunta ${i} sobre "${label}": ¿cuál de estas opciones es correcta?`,
+          options,
+          correctIndex,
+          explanation: `Esta es de ejemplo (modo demo) — la opción marcada es la correcta para "${label}".`,
+        });
       }
       return bank;
     }
@@ -400,7 +409,7 @@ adicional ni bloques de código, con este formato exacto:
             options: q.options,
             correctIndex: q.correctIndex,
             image: q.image || null,
-            explanation: null,
+            explanation: q.explanation || null,
             subject,
             selected: true,
           });
